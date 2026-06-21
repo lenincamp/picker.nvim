@@ -1,5 +1,4 @@
 local M = {}
-local picker_config = require("picker.config")
 local picker_filter = require("picker.filter")
 local picker_filter_state = require("picker.filter_state")
 local picker_keymaps = require("picker.keymaps")
@@ -634,13 +633,6 @@ function M.select_items(items, opts, on_choice)
   end
 
   choose(items, "")
-end
-
-function M.setup(opts)
-  picker_config.apply(opts or {})
-  if picker_config.current.layout then
-    intellij_grep = picker_config.current.layout == "intellij_grep"
-  end
 end
 
 function M.with_layout(opts)
