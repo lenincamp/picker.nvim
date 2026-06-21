@@ -658,4 +658,14 @@ function M.resume()
   end
 end
 
+function M.setup(opts)
+  local config = require("picker.config")
+  config.apply(opts)
+  if opts and opts.layout == "intellij_grep" then
+    intellij_grep = true
+  elseif opts and opts.layout then
+    intellij_grep = false
+  end
+end
+
 return M
