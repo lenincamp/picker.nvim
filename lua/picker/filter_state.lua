@@ -13,6 +13,30 @@ function M.items(items, opts, state)
   return next_candidates
 end
 
+function M.items_async(items, opts, state, done, is_stale)
+  local function apply_secondary(next_candidates)
+    if is_stale and is_stale() then
+      return
+    end
+    if state.quick_filter then
+      next_candidates = picker_filter.by_predicate(next_candidates, state.quick_filter.predicate)
+    end
+    if state.regex_pattern then
+      next_candidates = picker_filter.by_regex(next_candidates, opts, state.regex_pattern)
+    end
+    done(next_candidates)
+  end
+
+  if state.query == "" then
+    vim.schedule(function()
+      apply_secondary(items)
+    end)
+    return
+  end
+
+  picker_filter.items_async(items, opts, state.query, apply_secondary, is_stale)
+end
+
 function M.label(state)
   local labels = {}
   if state.quick_filter then

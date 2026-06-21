@@ -322,6 +322,61 @@ function M.items(items, opts, query)
   return filtered
 end
 
+function M.items_async(items, opts, query, done, is_stale)
+  opts = opts or {}
+  local tokens = query_tokens(query)
+  local use_limit = #tokens > 0 and opts.filter_limit ~= false
+  local limit = tonumber(opts.filter_limit) or 5000
+  local chunk_size = tonumber(opts.filter_chunk_size) or 600
+  local entries = {}
+  local index = 1
+
+  local function finish()
+    if is_stale and is_stale() then
+      return
+    end
+    if #tokens > 0 then
+      table.sort(entries, better)
+    end
+
+    local filtered = {}
+    for entry_index, entry in ipairs(entries) do
+      filtered[entry_index] = entry.item
+    end
+    done(filtered)
+  end
+
+  local function step()
+    if is_stale and is_stale() then
+      return
+    end
+
+    local last = math.min(#items, index + chunk_size - 1)
+    while index <= last do
+      local item = items[index]
+      local label = M.item_label(item, opts)
+      local score = fuzzy_score(label, tokens)
+      if score then
+        local entry = { item = item, label = label, score = score }
+        if use_limit then
+          heap_push(entries, entry, limit)
+        else
+          entries[#entries + 1] = entry
+        end
+      end
+      index = index + 1
+    end
+
+    if index <= #items then
+      vim.schedule(step)
+    else
+      finish()
+    end
+  end
+
+  vim.schedule(step)
+end
+
 function M.by_predicate(items, predicate)
   local filtered = {}
   for _, item in ipairs(items) do

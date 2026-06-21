@@ -1,16 +1,19 @@
 local M = {}
 local picker_filter = require("picker.filter")
 local picker_filter_state = require("picker.filter_state")
+local picker_input = require("picker.input")
 local picker_keymaps = require("picker.keymaps")
 local picker_layout_mod = require("picker.layout")
 local picker_navigation = require("picker.navigation")
 local picker_preview = require("picker.preview")
 local picker_preview_window = require("picker.preview_window")
+local picker_proc = require("picker.proc")
 local picker_quickfix = require("picker.quickfix")
 local picker_render = require("picker.render")
 local picker_selection = require("picker.selection")
 local picker_windows = require("picker.windows")
 
+local uv = vim.uv or vim.loop
 local intellij_grep = true
 local last_qf_title = nil
 local preview_namespace = vim.api.nvim_create_namespace("native_picker_preview")
@@ -61,11 +64,12 @@ function M.select_items(items, opts, on_choice)
     local current_filter_label = nil
     local current_quick_filter = nil
     local current_regex_pattern = nil
+    local current_all_files = opts.all_files == true
     local choosing_quick_filter = false
-    local input_insert_mode = opts.input_mode == true
     local filter_generation = 0
     local selected = {}
     local page_start = 1
+    local cursor_row = 3 -- tracks selected row in candidates (1-indexed buffer line)
     local has_preview = type(opts.preview) == "function" or type(opts.preview_lines) == "function"
     local preview_enabled = has_preview and opts.preview_open == true
     local preview_maximized = false
@@ -73,6 +77,7 @@ function M.select_items(items, opts, on_choice)
     local picker_layout = opts.layout or (intellij_grep and "intellij_grep" or "default")
     local layout
     local width, height
+    local cursor_namespace = vim.api.nvim_create_namespace("native_picker_cursor")
 
     local function calculate_layout()
       layout = picker_layout_mod.calculate({
@@ -92,6 +97,18 @@ function M.select_items(items, opts, on_choice)
       return picker_layout_mod.preview_config(layout, preview_maximized)
     end
 
+    local function highlight_cursor_line()
+      if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
+      vim.api.nvim_buf_clear_namespace(candidates_buf, cursor_namespace, 0, -1)
+      local line_count = vim.api.nvim_buf_line_count(candidates_buf)
+      if cursor_row >= 3 and cursor_row <= line_count then
+        vim.api.nvim_buf_set_extmark(candidates_buf, cursor_namespace, cursor_row - 1, 0, {
+          line_hl_group = "CursorLine",
+          hl_eol = true,
+        })
+      end
+    end
+
     candidates_win, candidates_buf = picker_windows.open_candidates(picker_layout_mod.candidates_config(layout))
     if not candidates_win then
       close_candidates_window()
@@ -104,6 +121,7 @@ function M.select_items(items, opts, on_choice)
         current_candidates = current_candidates,
         current_filter_label = current_filter_label,
         current_query = current_query,
+        all_files = current_all_files,
         choosing_quick_filter = choosing_quick_filter,
         has_preview = has_preview,
         height = height,
@@ -113,7 +131,6 @@ function M.select_items(items, opts, on_choice)
         prompt = prompt,
         selected = selected,
         show_descriptions = show_descriptions,
-        input_insert_mode = input_insert_mode,
         width = width,
       })
       page_start = rendered.page_start
@@ -123,9 +140,18 @@ function M.select_items(items, opts, on_choice)
       vim.bo[candidates_buf].modifiable = false
       picker_render.highlight(candidates_buf, picker_namespace, rendered)
 
-      if vim.api.nvim_win_is_valid(candidates_win) then
-        vim.api.nvim_win_set_cursor(candidates_win, { math.min(3, #rendered.lines), 0 })
+      -- Clamp cursor_row to valid range after content changes
+      local last_line = #rendered.lines
+      if last_line < 3 then
+        cursor_row = math.max(1, last_line)
+      else
+        cursor_row = math.max(3, math.min(cursor_row, last_line))
       end
+
+      if vim.api.nvim_win_is_valid(candidates_win) then
+        vim.api.nvim_win_set_cursor(candidates_win, { cursor_row, 0 })
+      end
+      highlight_cursor_line()
     end
 
     local function current_item()
@@ -146,6 +172,30 @@ function M.select_items(items, opts, on_choice)
         namespace = preview_namespace,
         picker_opts = opts,
       })
+    end
+
+    local async_proc = nil
+    local debounce_timer = uv.new_timer()
+    local input_state = nil
+
+    local function abort_async()
+      picker_proc.abort(async_proc)
+      async_proc = nil
+    end
+
+    -- Wrap close to also clean up async resources
+    local _base_close = close_candidates_window
+    local function close_candidates_window() -- luacheck: ignore 431
+      abort_async()
+      if not debounce_timer:is_closing() then
+        debounce_timer:stop()
+        debounce_timer:close()
+      end
+      if input_state then
+        picker_input.close(input_state)
+        input_state = nil
+      end
+      _base_close()
     end
 
     local function select_index(index)
@@ -214,37 +264,116 @@ function M.select_items(items, opts, on_choice)
 
     local function move_cursor(delta)
       if picker_navigation.move_cursor(candidates_win, current_candidates, page_start, height, delta) then
+        cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
+        highlight_cursor_line()
         update_preview()
       end
     end
 
     local function apply_filter_state(empty_message)
       local filter_state = {
+        all_files = current_all_files,
         query = current_query,
         quick_filter = current_quick_filter,
         regex_pattern = current_regex_pattern,
       }
-      local next_candidates
+
       if type(opts.dynamic_items) == "function" then
-        local ok, dynamic = pcall(opts.dynamic_items, filter_state)
-        next_candidates = ok and type(dynamic) == "table" and dynamic or {}
-      else
-        next_candidates = opts.input_only and {} or picker_filter_state.items(items, opts, filter_state)
-      end
-      if #next_candidates == 0 and not opts.input_mode then
-        notify(empty_message or (prompt .. ": no results"), vim.log.levels.WARN)
-        return false
+        abort_async()
+        filter_generation = filter_generation + 1
+        local generation = filter_generation
+        local render_scheduled = false
+
+        local function receive_items(next_candidates)
+          if generation ~= filter_generation then return end
+          if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
+          if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then return end
+          current_filter_label = picker_filter_state.label(filter_state)
+          current_candidates = next_candidates or {}
+          choosing_quick_filter = false
+          page_start = 1
+          -- Throttle render: only one pending render per event loop cycle
+          if not render_scheduled then
+            render_scheduled = true
+            vim.schedule(function()
+              render_scheduled = false
+              if generation ~= filter_generation then return end
+              if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
+              render()
+              update_preview()
+            end)
+          end
+        end
+
+        local arity = debug.getinfo(opts.dynamic_items, "u").nparams
+        if arity >= 2 then
+          -- Async form: dynamic_items(state, callback)
+          local ok, handle = pcall(opts.dynamic_items, filter_state, function(items)
+            if generation ~= filter_generation then return end
+            -- Schedule to ensure we're on the main thread regardless of caller context
+            vim.schedule(function()
+              if generation ~= filter_generation then return end
+              receive_items(items)
+            end)
+          end)
+          if ok and type(handle) == "table" then
+            async_proc = handle
+          end
+          return true
+        else
+          -- Sync form: dynamic_items(state) -> items
+          -- Defer blocking callbacks (e.g. vim.system():wait()) — never run in fast events.
+          vim.schedule(function()
+            if generation ~= filter_generation then return end
+            if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then
+              return
+            end
+            local ok, dynamic = pcall(opts.dynamic_items, filter_state)
+            if generation ~= filter_generation then return end
+            if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then
+              return
+            end
+            local next_candidates = ok and type(dynamic) == "table" and dynamic or {}
+            if #next_candidates == 0 and not opts.input_mode then
+              notify(empty_message or (prompt .. ": no results"), vim.log.levels.WARN)
+              return
+            end
+            receive_items(next_candidates)
+          end)
+          return true
+        end
       end
 
-      current_filter_label = picker_filter_state.label(filter_state)
-      current_candidates = next_candidates
-      choosing_quick_filter = false
-      page_start = 1
-      if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
-        vim.api.nvim_set_current_win(candidates_win)
-      end
-      render()
-      update_preview()
+      filter_generation = filter_generation + 1
+      local generation = filter_generation
+      picker_filter_state.items_async(
+        opts.input_only and {} or items,
+        opts,
+        filter_state,
+        function(next_candidates)
+          if generation ~= filter_generation then return end
+          if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
+          if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then return end
+          if #next_candidates == 0 and not opts.input_mode then
+            notify(empty_message or (prompt .. ": no results"), vim.log.levels.WARN)
+            return
+          end
+
+          current_filter_label = picker_filter_state.label(filter_state)
+          current_candidates = next_candidates
+          choosing_quick_filter = false
+          page_start = 1
+          cursor_row = 3
+          if not opts.input_mode then
+            vim.api.nvim_set_current_win(candidates_win)
+          end
+          render()
+          update_preview()
+        end,
+        function()
+          return generation ~= filter_generation
+        end
+      )
       return true
     end
 
@@ -286,6 +415,11 @@ function M.select_items(items, opts, on_choice)
         return
       end
       current_quick_filter = nil
+      apply_filter_state()
+    end
+
+    local function toggle_all_files()
+      current_all_files = not current_all_files
       apply_filter_state()
     end
 
@@ -335,9 +469,9 @@ function M.select_items(items, opts, on_choice)
       local next_start, changed = picker_navigation.page(current_candidates, page_start, height, delta)
       if changed then
         page_start = next_start
+        cursor_row = 3
         render()
         update_preview()
-        vim.cmd("normal! zz")
       end
     end
 
@@ -345,17 +479,20 @@ function M.select_items(items, opts, on_choice)
       local next_start, changed = picker_navigation.page_up_or_top(candidates_win, current_candidates, page_start, height)
       if changed then
         page_start = next_start
+        cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
+        highlight_cursor_line()
         update_preview()
-        vim.cmd("normal! zz")
       end
     end
 
     local function jump_group(delta)
-      local next_start, cursor_row = picker_navigation.jump_group(opts, candidates_win, current_candidates, page_start, height, delta)
-      if cursor_row then
+      local next_start, group_row = picker_navigation.jump_group(opts, candidates_win, current_candidates, page_start, height, delta)
+      if group_row then
         page_start = next_start
+        cursor_row = group_row
         render()
         vim.api.nvim_win_set_cursor(candidates_win, { cursor_row, 0 })
+        highlight_cursor_line()
         update_preview()
       end
     end
@@ -380,22 +517,6 @@ function M.select_items(items, opts, on_choice)
       update_preview()
     end
 
-    local function enter_insert_mode()
-      if opts.input_mode then
-        input_insert_mode = true
-        render()
-      end
-    end
-
-    local function exit_insert_mode()
-      if opts.input_mode and input_insert_mode then
-        input_insert_mode = false
-        render()
-        return true
-      end
-      return false
-    end
-
     local function focus_preview()
       if not has_preview then return end
       if not preview_enabled then
@@ -409,21 +530,16 @@ function M.select_items(items, opts, on_choice)
       vim.api.nvim_set_current_win(preview_win)
 
       local preview_map_opts = { buffer = preview_buf, silent = true }
-      vim.keymap.set("n", "<C-o>", function()
-        if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
+      local function return_to_input()
+        if input_state then
+          picker_input.focus(input_state)
+        elseif candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
           vim.api.nvim_set_current_win(candidates_win)
         end
-      end, preview_map_opts)
-      vim.keymap.set("n", "q", function()
-        if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
-          vim.api.nvim_set_current_win(candidates_win)
-        end
-      end, preview_map_opts)
-      vim.keymap.set("n", "<Esc>", function()
-        if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
-          vim.api.nvim_set_current_win(candidates_win)
-        end
-      end, preview_map_opts)
+      end
+      vim.keymap.set("n", "<C-o>", return_to_input, preview_map_opts)
+      vim.keymap.set("n", "q", return_to_input, preview_map_opts)
+      vim.keymap.set("n", "<Esc>", return_to_input, preview_map_opts)
     end
 
     local function toggle_picker_layout()
@@ -447,9 +563,6 @@ function M.select_items(items, opts, on_choice)
     end
 
     local function cancel_or_close()
-      if exit_insert_mode() then
-        return
-      end
       if choosing_quick_filter then
         choosing_quick_filter = false
         render()
@@ -458,89 +571,34 @@ function M.select_items(items, opts, on_choice)
       close_candidates_window()
     end
 
-    local function run_or_select_quick_filter(key, action)
-      return function()
-        if choosing_quick_filter then
-          select_quick_filter_key(key)
-          return
-        end
-        action()
-      end
-    end
-
     local function update_inline_query(next_query)
-      local previous_query = current_query
       current_query = next_query or ""
-      if opts.input_mode then
-        filter_generation = filter_generation + 1
-        local generation = filter_generation
-        render()
-        vim.defer_fn(function()
-          if generation ~= filter_generation then
-            return
-          end
-          if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then
-            return
-          end
-          if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then
-            return
-          end
+      cursor_row = 3
+      filter_generation = filter_generation + 1
+      local generation = filter_generation
+      local ms = type(opts.dynamic_items) == "function" and math.max(tonumber(opts.debounce_ms) or 200, 50) or math.max(tonumber(opts.debounce_ms) or 25, 5)
+
+      local function refresh()
+        debounce_timer:stop()
+        debounce_timer:start(ms, 0, vim.schedule_wrap(function()
+          if generation ~= filter_generation then return end
+          if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
+          if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then return end
           apply_filter_state(prompt .. ": no results for " .. current_query)
-        end, tonumber(opts.debounce_ms) or 25)
-        return
+        end))
       end
-      if not apply_filter_state(prompt .. ": no results for " .. current_query) then
-        current_query = previous_query
-      end
-    end
 
-    local function append_query(text)
-      return function()
-        if opts.input_mode and not input_insert_mode then
-          return
-        end
-        if choosing_quick_filter then
-          select_quick_filter_key(text)
-          return
-        end
-        update_inline_query(current_query .. text)
+      if vim.in_fast_event() then
+        vim.schedule(refresh)
+      else
+        refresh()
       end
-    end
-
-    local function paste_query()
-      local text = vim.fn.getreg("+")
-      if text == "" then
-        text = vim.fn.getreg("*")
-      end
-      if text == "" then
-        text = vim.fn.getreg('"')
-      end
-      text = tostring(text or ""):gsub("[\r\n]+", " ")
-      if text == "" then
-        return
-      end
-      update_inline_query(current_query .. text)
-    end
-
-    local function backspace_query()
-      if current_query == "" then
-        return
-      end
-      update_inline_query(current_query:sub(1, -2))
-    end
-
-    local function clear_query()
-      update_inline_query("")
     end
 
     local function toggle_selected()
-      if not opts.multi_select then
-        return
-      end
+      if not opts.multi_select then return end
       local item = current_item()
-      if not item then
-        return
-      end
+      if not item then return end
       local key = picker_selection.item_key(opts, item)
       selected[key] = not selected[key] or nil
       render()
@@ -561,46 +619,144 @@ function M.select_items(items, opts, on_choice)
       end
     end
 
-    picker_keymaps.setup({
-      append_query = append_query,
-      apply_quick_filter = apply_quick_filter,
-      ask_filter = ask_filter,
-      ask_quick_filter = ask_quick_filter,
-      ask_regex_filter = ask_regex_filter,
-      backspace_query = backspace_query,
-      buffer = candidates_buf,
-      cancel_or_close = cancel_or_close,
-      clear_active_filters = clear_active_filters,
-      clear_query = clear_query,
-      enter_insert_mode = enter_insert_mode,
-      exit_insert_mode = exit_insert_mode,
-      focus_preview = focus_preview,
-      is_insert_mode = function() return input_insert_mode end,
-      is_choosing_quick_filter = function() return choosing_quick_filter end,
-      jump_group = jump_group,
-      move_cursor = move_cursor,
-      open_quickfix = open_quickfix,
-      open_split = open_split,
-      opts = opts,
-      page = page,
-      page_up_or_top = page_up_or_top,
-      paste_query = paste_query,
-      run_action = run_action,
-      run_or_select_quick_filter = run_or_select_quick_filter,
-      scroll_preview_down = function() scroll_preview(height) end,
-      scroll_preview_up = function() scroll_preview(-height) end,
-      select_cursor = select_cursor,
-      select_index = select_index,
-      select_quick_filter_key = select_quick_filter_key,
-      toggle_descriptions = toggle_descriptions,
-      toggle_picker_layout = toggle_picker_layout,
-      toggle_preview = toggle_preview,
-      toggle_preview_zoom = toggle_preview_zoom,
-      toggle_selected = toggle_selected,
-    })
+    -- Normal-mode key handler for the input buffer (dispatches picker actions)
+    local function handle_normal_key(key)
+      -- Quick filter menu intercepts all keys
+      if choosing_quick_filter then
+        if key == "<Esc>" or key == "q" then
+          choosing_quick_filter = false
+          render()
+        else
+          -- Extract printable char from key notation
+          local char = key:match("^(.)$")
+          if char then select_quick_filter_key(char) end
+        end
+        return
+      end
 
-    render()
-    update_preview()
+      if key == "j" or key == "<C-n>" or key == "<C-j>" then
+        move_cursor(1)
+      elseif key == "k" or key == "<C-p>" or key == "<C-k>" then
+        move_cursor(-1)
+      elseif key == "<CR>" then
+        select_cursor()
+      elseif key == "<Esc>" or key == "q" then
+        cancel_or_close()
+      elseif key == "<C-q>" then
+        open_quickfix()
+      elseif key == "<C-r>" then
+        if input_state then picker_input.refresh(input_state) end
+      elseif key == "<C-v>" then
+        open_split("vsplit")
+      elseif key == "<C-x>" then
+        local custom = (opts.actions or {})["<C-x>"]
+        if custom and type(custom) == "table" and type(custom.fn) == "function" then
+          run_action(custom)()
+        else
+          open_split("split")
+        end
+      elseif key == "<Tab>" then
+        toggle_preview()
+      elseif key == "<C-o>" then
+        focus_preview()
+      elseif key == "<C-u>" then
+        page_up_or_top()
+      elseif key == "<C-d>" then
+        page(1)
+      elseif key == "<C-f>" then
+        scroll_preview(height)
+      elseif key == "<C-b>" then
+        scroll_preview(-height)
+      elseif key == "<A-l>" then
+        toggle_picker_layout()
+      elseif key == "z" then
+        toggle_preview_zoom()
+      elseif key == "?" then
+        toggle_descriptions()
+      elseif key == "<Space>" or key == "m" then
+        toggle_selected()
+      elseif key == "]g" then
+        jump_group(1)
+      elseif key == "[g" then
+        jump_group(-1)
+      elseif key == "F" then
+        ask_quick_filter()
+      elseif key == "C" then
+        clear_active_filters()
+      elseif key == "R" then
+        ask_regex_filter()
+      elseif key == "I" then
+        toggle_all_files()
+      elseif key == "p" then
+        if input_state then picker_input.paste(input_state) end
+      elseif key:match("^%d$") then
+        select_index(tonumber(key))
+      end
+    end
+
+    if opts.input_mode then
+      -- Make candidates window non-focusable so user stays in input
+      if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
+        pcall(vim.api.nvim_win_set_config, candidates_win, { focusable = false })
+      end
+
+      render()
+      update_preview()
+
+      -- Open real input buffer
+      local input_row = math.max(0, layout.row - 3)
+      input_state = picker_input.open({
+        prompt = prompt,
+        row = input_row,
+        col = layout.col,
+        width = layout.width,
+        initial = current_query,
+        debounce_ms = tonumber(opts.input_debounce_ms) or 35,
+        on_change = function(text)
+          update_inline_query(text)
+        end,
+        on_submit = function(_text)
+          select_cursor()
+        end,
+        on_close = function()
+          close_candidates_window()
+        end,
+        on_normal_key = handle_normal_key,
+      })
+    else
+      -- Non-input_mode: keymaps on candidates buffer (old behavior)
+      picker_keymaps.setup({
+        buffer = candidates_buf,
+        cancel_or_close = cancel_or_close,
+        move_cursor = move_cursor,
+        open_quickfix = open_quickfix,
+        open_split = open_split,
+        opts = opts,
+        page = page,
+        page_up_or_top = page_up_or_top,
+        run_action = run_action,
+        scroll_preview_down = function() scroll_preview(height) end,
+        scroll_preview_up = function() scroll_preview(-height) end,
+        select_cursor = select_cursor,
+        select_index = select_index,
+        toggle_descriptions = toggle_descriptions,
+        toggle_picker_layout = toggle_picker_layout,
+        toggle_preview = toggle_preview,
+        toggle_preview_zoom = toggle_preview_zoom,
+        toggle_selected = toggle_selected,
+        focus_preview = focus_preview,
+        ask_quick_filter = ask_quick_filter,
+        ask_filter = ask_filter,
+        ask_regex_filter = ask_regex_filter,
+        apply_quick_filter = apply_quick_filter,
+        clear_active_filters = clear_active_filters,
+        toggle_all_files = toggle_all_files,
+        select_quick_filter_key = select_quick_filter_key,
+        jump_group = jump_group,
+      })
+      render()
+      update_preview()
+    end
   end
 
   local function choose(candidates, query)
@@ -650,6 +806,11 @@ function M.set_intellij_grep(v)
   intellij_grep = v and true or false
 end
 
+function M.toggle_intellij_grep()
+  M.set_intellij_grep(not M.is_intellij_grep_enabled())
+  return M.is_intellij_grep_enabled()
+end
+
 function M.resume()
   if last_qf_title then
     vim.cmd("copen")
@@ -659,13 +820,74 @@ function M.resume()
 end
 
 function M.setup(opts)
+  opts = opts or {}
+  local dashboard_opts = opts.dashboard
+  local keymaps_opts = opts.keymaps
+  local picker_opts = vim.deepcopy(opts)
+  picker_opts.dashboard = nil
+  picker_opts.keymaps = nil
+
   local config = require("picker.config")
-  config.apply(opts)
-  if opts and opts.layout == "intellij_grep" then
+  config.apply(picker_opts)
+  if picker_opts.layout == "intellij_grep" then
     intellij_grep = true
-  elseif opts and opts.layout then
+  elseif picker_opts.layout then
     intellij_grep = false
   end
+
+  require("picker.dashboard").setup(dashboard_opts)
+  require("picker.git.status").setup_commands()
+
+  if keymaps_opts == false or (type(keymaps_opts) == "table" and keymaps_opts.enabled == false) then
+    return
+  end
+  require("picker.user_keymaps").apply(type(keymaps_opts) == "table" and keymaps_opts or {})
 end
+
+local util = require("picker.util")
+local misc = require("picker.builtins.misc")
+local buffers = require("picker.builtins.buffers")
+local recent = require("picker.builtins.recent")
+local grep = require("picker.builtins.grep")
+local files = require("picker.builtins.files")
+local git = require("picker.builtins.git")
+local todos = require("picker.builtins.todos")
+
+M.root = util.root
+M.filters = util.filters
+M.registers = misc.registers
+M.command_history = misc.command_history
+M.commands = misc.commands
+M.diagnostics = misc.diagnostics
+M.help = misc.help
+M.keymaps = misc.keymaps
+M.loclist = misc.loclist
+M.qflist = misc.qflist
+M.marks = misc.marks
+M.notifications = misc.notifications
+M.undo_history = misc.undo_history
+M.buffers = buffers.buffers
+M.delete_buffer = buffers.delete_buffer
+M.delete_other_buffers = buffers.delete_other_buffers
+M.recent_files = recent.recent_files
+M.find_files = files.find_files
+M.open_terminal = files.open_terminal
+M.grep = grep.grep
+M.grep_picker = grep.grep_picker
+M.grep_word = grep.grep_word
+M.grep_buffer = grep.grep_buffer
+M.git_files = git.git_files
+M.git_log = git.git_log
+M.git_blame_line = git.git_blame_line
+M.git_file_history = git.git_file_history
+M.git_browse = git.git_browse
+M.lazygit = git.lazygit
+M.git_status_grep = git.git_status_grep
+M.git_line_history = git.git_line_history
+M.todos = todos.todos
+M.todos_urgent = todos.todos_urgent
+
+M.dashboard = require("picker.dashboard")
+M.gutter = require("picker.gutter")
 
 return M

@@ -24,26 +24,25 @@ function M.segments(opts, state)
   end
 
   local layout_label = state.picker_layout == "intellij_grep" and "intellij" or (state.has_preview and "side" or "list")
-  local mode_label = opts.input_mode and (state.input_insert_mode and "INS" or "NORMAL") or nil
   local enter_label = type(opts.dynamic_items) == "function" and "open" or (opts.submit_query and "run" or "open")
+  local all_files_label = state.all_files and "all:on" or "all"
   if state.show_descriptions then
     local filter_help = picker_filter.has_filters(state.filters) and "  F=types  C=clear-type  R=regex" or ""
-    local input_help = opts.input_mode and (state.input_insert_mode and "  type=filter  BS=back" or "  i/a=insert") or "  /=filter"
+    local input_help = opts.input_mode and "" or "  /=filter"
     local multi_help = opts.multi_select and "  Space/m=mark" or ""
     local description_help = (opts.describe_item or opts.item_descriptions) and "  items=descriptions" or ""
     local actions = action_parts(opts.actions, true)
     local action_help = #actions > 0 and ("  " .. table.concat(actions, "  ")) or ""
-    local close_help = opts.input_mode and (state.input_insert_mode and "Esc=normal" or "Esc/q=close") or "q=close"
-    local zoom_help = opts.input_mode and "A-z=zoom" or "z=zoom"
-    if opts.input_mode then
-      zoom_help = state.input_insert_mode and "z=text" or "z=zoom"
-    end
-    return string.format("%s%sEnter=%s  C-q=qf%s%s%s%s%s  1-9=open  Tab=preview  C-o=focus  A-l=layout:%s  %s  C-u/C-d=page  C-f/C-b=scroll%s  ?=keys  %s  (%d total)", mode_label and (mode_label .. "  ") or "", "", enter_label, input_help, filter_help, multi_help, description_help, action_help, layout_label, zoom_help, state.group_help, close_help, state.total)
+    local close_help = "Esc/q=close"
+    local zoom_help = "z=zoom"
+    return string.format("Enter=%s  C-q=qf  I=%s%s%s%s%s%s  1-9=open  Tab=preview  C-o=focus  A-l=layout:%s  %s  C-u/C-d=page  C-f/C-b=scroll%s  ?=keys  %s  (%d total)", enter_label, all_files_label, input_help, filter_help, multi_help, description_help, action_help, layout_label, zoom_help, state.group_help, close_help, state.total)
   end
 
   local parts = {}
-  if mode_label then parts[#parts + 1] = mode_label end
-  vim.list_extend(parts, { "Enter", "C-q", opts.input_mode and (state.input_insert_mode and "type" or "NORMAL") or "/" })
+  vim.list_extend(parts, { "Enter", "C-q" })
+  if not opts.input_mode then
+    parts[#parts + 1] = "/"
+  end
   if picker_filter.has_filters(state.filters) then
     vim.list_extend(parts, { "F", "C", "R" })
   end
@@ -51,11 +50,14 @@ function M.segments(opts, state)
     vim.list_extend(parts, { "Space/m" })
   end
   vim.list_extend(parts, action_parts(opts.actions, false))
-  vim.list_extend(parts, { "1-9", "Tab", "C-o", "A-l:" .. layout_label, opts.input_mode and (state.input_insert_mode and "z" or "z") or "z", "C-u/d", "C-f/b" })
+  vim.list_extend(parts, { "I", "1-9", "Tab", "C-o", "z", "C-u/d", "C-f/b" })
+  if state.all_files then
+    parts[#parts + 1] = "all:on"
+  end
   if opts.group_item then
     vim.list_extend(parts, { "[g", "]g" })
   end
-  vim.list_extend(parts, { "?", opts.input_mode and (state.input_insert_mode and "Esc" or "i/a Esc/q") or "q", string.format("%d total", state.total) })
+  vim.list_extend(parts, { "?", "Esc/q", string.format("%d total", state.total) })
 
   return table.concat(parts, "  ")
 end

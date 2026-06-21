@@ -1,8 +1,16 @@
 local M = {}
 
+local function single_line(value)
+  return tostring(value or ""):gsub("[\r\n]+", " ")
+end
+
 local function normalize_lines(value)
   if type(value) == "string" then
-    return vim.split(value, "\n", { plain = true })
+    local lines = vim.split(value, "\n", { plain = true })
+    if #lines > 1 and lines[#lines] == "" then
+      table.remove(lines)
+    end
+    return #lines > 0 and lines or { "" }
   end
 
   if type(value) ~= "table" then
@@ -33,7 +41,7 @@ end
 function M.content(opts, item, render_width)
   if type(opts.preview_lines) ~= "function" then return nil end
   local ok, result = pcall(opts.preview_lines, item, render_width)
-  if not ok then return false, { "Preview failed: " .. tostring(result) }, nil end
+  if not ok then return false, { "Preview failed: " .. single_line(result) }, nil end
 
   if type(result) == "string" then
     return true, normalize_lines(result), nil
@@ -47,7 +55,7 @@ function M.content(opts, item, render_width)
     return true, normalize_lines(result), nil
   end
 
-  return false, { "No preview" }, nil
+  return false, { "No preview available" }, nil
 end
 
 function M.target_lnum(opts, item)
@@ -58,13 +66,13 @@ function M.target_lnum(opts, item)
 end
 
 function M.allowed(opts, path, item)
-  if not path or vim.fn.filereadable(path) ~= 1 then return false, "No preview" end
+  if not path or vim.fn.filereadable(path) ~= 1 then return false, "No readable preview" end
   local size = vim.fn.getfsize(path)
-  if size < 0 or size > (opts.preview_max_bytes or 300000) then return false, "Preview skipped: file too large" end
+  if size < 0 or size > (opts.preview_max_bytes or 300000) then return false, "Preview skipped: file is too large" end
   local target_lnum = M.target_lnum(opts, item)
   local line_limit = math.max(opts.preview_lines or 120, target_lnum and (target_lnum + 60) or 0)
   local ok, lines = pcall(vim.fn.readfile, path, "", line_limit)
-  if not ok then return false, "Preview failed" end
+  if not ok then return false, "Preview failed: unable to read file" end
   for _, line in ipairs(lines) do
     if line:find("%z") then return false, "Preview skipped: binary file" end
   end
@@ -78,7 +86,7 @@ function M.match(opts, item, lines)
 end
 
 function M.apply_match(bufnr, namespace, match, lines)
-  if not (match and match.lnum and match.lnum <= #lines) then
+  if not (match and match.lnum and match.lnum >= 1 and match.lnum <= #lines) then
     return
   end
 

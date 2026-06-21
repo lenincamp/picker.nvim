@@ -37,9 +37,9 @@ function M.lines(opts, state)
   local filters = opts.filters or opts.quick_filters
   local status_line = picker_status.segments(opts, {
     choosing_quick_filter = state.choosing_quick_filter,
+    all_files = state.all_files,
     filters = filters,
     has_preview = state.has_preview,
-    input_insert_mode = state.input_insert_mode,
     picker_layout = state.picker_layout,
     show_descriptions = state.show_descriptions,
     group_help = opts.group_item and "  [g/]g=group" or "",

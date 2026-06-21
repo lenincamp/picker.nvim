@@ -1,0 +1,18 @@
+# Dependencies
+.luarocks/
+
+# Build artifacts
+*.so
+*.o
+
+# Test artifacts
+luacov.*
+
+# Editor
+.nvim.lua
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

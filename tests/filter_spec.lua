@@ -61,6 +61,19 @@ local none = filter.items(items, {}, "zzzzz_nonexistent")
 assert_eq(#none, 0, "no match returns empty")
 print("items no match: ok")
 
+-- Test: items_async yields before returning results
+local async_result = nil
+local async_inline = true
+filter.items_async(items, { filter_chunk_size = 1 }, "frontend svg", function(result)
+  async_result = result
+  assert_true(not async_inline, "items_async callback is scheduled")
+end)
+async_inline = false
+vim.wait(500, function() return async_result ~= nil end, 10)
+assert_true(async_result ~= nil, "items_async returned")
+assert_eq(#async_result, 2, "items_async result count")
+print("items_async: ok")
+
 -- Test: match_ranges exact
 local ranges = filter.match_ranges("frontend/images/patagonia/unchecked.svg", "unchecked")
 assert_eq(#ranges, 1, "match_ranges count")

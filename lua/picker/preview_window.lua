@@ -3,6 +3,47 @@ local M = {}
 local picker_preview = require("picker.preview")
 local preview = require("preview")
 
+local function normalize_preview_lines(value)
+  if type(value) == "table" then
+    return #value > 0 and value or { "" }
+  end
+  return { tostring(value or "") }
+end
+
+local function truncate_label(label, width)
+  label = tostring(label or "")
+  width = math.max(10, width or 30)
+  if vim.fn.strdisplaywidth(label) <= width then
+    return label
+  end
+  return vim.fn.strcharpart(label, 0, math.max(1, width - 3)) .. "..."
+end
+
+local function preview_label(path, item, width)
+  local label = path
+  if type(item) == "table" then
+    label = label or item.path or item.filename or item.label or item.value
+  end
+  if type(label) == "string" and label ~= "" then
+    label = vim.fn.fnamemodify(label, ":~:.")
+  else
+    label = "Preview"
+  end
+  return truncate_label(label, width)
+end
+
+local function apply_window_options(win)
+  vim.wo[win].wrap = false
+  vim.wo[win].number = true
+  vim.wo[win].relativenumber = false
+  vim.wo[win].cursorline = true
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].foldcolumn = "0"
+  vim.wo[win].list = false
+  vim.wo[win].spell = false
+  vim.wo[win].colorcolumn = ""
+end
+
 function M.close(win, bufnr)
   if win and vim.api.nvim_win_is_valid(win) then
     pcall(vim.api.nvim_win_close, win, true)
@@ -29,18 +70,19 @@ function M.update(win, bufnr, opts)
     ok_preview, fallback = picker_preview.allowed(opts.picker_opts, path, item)
   end
 
-  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-    pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    bufnr = vim.api.nvim_create_buf(false, true)
   end
-
-  bufnr = vim.api.nvim_create_buf(false, true)
   vim.bo[bufnr].bufhidden = "wipe"
   vim.bo[bufnr].buftype = "nofile"
   vim.bo[bufnr].swapfile = false
+  vim.bo[bufnr].buflisted = false
   vim.bo[bufnr].modifiable = true
+  vim.bo[bufnr].syntax = ""
+  vim.api.nvim_buf_clear_namespace(bufnr, opts.namespace, 0, -1)
 
   if ok_preview then
-    local lines = type(fallback) == "table" and fallback or { tostring(fallback or "") }
+    local lines = normalize_preview_lines(fallback)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
     if preview_syntax then
       vim.bo[bufnr].syntax = preview_syntax
@@ -50,23 +92,27 @@ function M.update(win, bufnr, opts)
     preview.apply_ansi_highlights(bufnr, preview_highlights)
     picker_preview.apply_match(bufnr, opts.namespace, picker_preview.match(opts.picker_opts, item, lines), lines)
   else
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { fallback })
+    preview.apply_ansi_highlights(bufnr, nil)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, normalize_preview_lines(fallback))
   end
 
   vim.bo[bufnr].modifiable = false
 
+  local config = vim.tbl_extend("force", opts.config, {
+    title = " " .. preview_label(path, item, opts.config.width - 4) .. " ",
+    title_pos = "left",
+  })
+
   if not win or not vim.api.nvim_win_is_valid(win) then
-    local ok_win, next_win = pcall(vim.api.nvim_open_win, bufnr, false, opts.config)
+    local ok_win, next_win = pcall(vim.api.nvim_open_win, bufnr, false, config)
     if ok_win then
       win = next_win
-      vim.wo[win].wrap = false
-      vim.wo[win].number = true
-      vim.wo[win].relativenumber = false
-      vim.wo[win].cursorline = true
+      apply_window_options(win)
     end
   else
     vim.api.nvim_win_set_buf(win, bufnr)
-    pcall(vim.api.nvim_win_set_config, win, opts.config)
+    pcall(vim.api.nvim_win_set_config, win, config)
+    apply_window_options(win)
   end
 
   if ok_preview and win and vim.api.nvim_win_is_valid(win) then

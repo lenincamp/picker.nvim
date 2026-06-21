@@ -1,4 +1,5 @@
 local picker = require("picker")
+local picker_preview = require("picker.preview")
 
 local function assert_eq(a, b, msg)
   if a ~= b then
@@ -28,6 +29,14 @@ picker.set_intellij_grep(false)
 assert_true(not picker.is_intellij_grep_enabled(), "set_intellij false")
 picker.set_intellij_grep(true)
 assert_true(picker.is_intellij_grep_enabled(), "set_intellij true")
+
+local toggled = picker.toggle_intellij_grep()
+assert_true(not toggled, "toggle_intellij_grep off")
+assert_true(not picker.is_intellij_grep_enabled(), "toggle disabled intellij")
+picker.toggle_intellij_grep()
+assert_true(picker.is_intellij_grep_enabled(), "toggle_intellij_grep on")
+
+picker.set_intellij_grep(true)
 print("set/get intellij: ok")
 
 -- Test: with_layout
@@ -82,15 +91,17 @@ assert_true(chosen ~= nil, "on_choice called")
 assert_eq(chosen.value, "first", "on_choice receives correct item")
 print("select_items on_choice: ok")
 
--- Test: select_items input_mode opens in insert mode
+-- Test: select_items input_mode opens input float
 picker.select_items(
   { { label = "input target" } },
   { prompt = "Input Mode", input_mode = true, search_threshold = 0 },
   function() end
 )
-local lines = vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), 0, 2, false)
-local status = lines[2] or ""
-assert_true(status:find("INS", 1, true) ~= nil, "input_mode shows INS: " .. status)
+-- In input_mode the current buffer is the 1-line input float
+local input_buf = vim.api.nvim_get_current_buf()
+assert_eq(vim.bo[input_buf].buftype, "nofile", "input_mode current buf is input float")
+local win_config = vim.api.nvim_win_get_config(vim.api.nvim_get_current_win())
+assert_eq(win_config.height, 1, "input float height is 1")
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>q", true, false, true), "x", false)
 print("select_items input_mode: ok")
 
@@ -122,5 +133,108 @@ vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Space>j<Space><CR>", true
 vim.wait(200, function() return multi_chosen ~= nil end, 10)
 assert_true(type(multi_chosen) == "table" and #multi_chosen == 2, "multi-select returns 2 items")
 print("multi_select: ok")
+
+-- Test: preview match uses 1-based columns
+local pbuf = vim.api.nvim_create_buf(false, true)
+local pns = vim.api.nvim_create_namespace("native_picker_preview_test")
+local plines = { "alpha beta" }
+vim.api.nvim_buf_set_lines(pbuf, 0, -1, false, plines)
+picker_preview.apply_match(pbuf, pns, { lnum = 1, col = 7, length = 4 }, plines)
+local extmarks = vim.api.nvim_buf_get_extmarks(pbuf, pns, 0, -1, { details = true })
+local found_match = false
+for _, mark in ipairs(extmarks) do
+  if mark[3] == 6 and mark[4].end_col == 10 then
+    found_match = true
+    break
+  end
+end
+assert_true(found_match, "preview match highlights expected 1-based column")
+vim.api.nvim_buf_delete(pbuf, { force = true })
+print("preview match columns: ok")
+
+-- Test: input on_change is deferred out of TextChangedI (fast event)
+local picker_input = require("picker.input")
+local on_change_text = nil
+local input_state = picker_input.open({
+  prompt = "Defer",
+  row = 0,
+  col = 0,
+  width = 20,
+  on_change = function(text)
+    on_change_text = text
+    assert_true(not vim.in_fast_event(), "on_change runs outside fast events")
+  end,
+})
+vim.api.nvim_buf_set_lines(input_state.buf, 0, -1, true, { "bar" })
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = input_state.buf })
+vim.wait(200, function() return on_change_text == "bar" end, 10)
+assert_eq(on_change_text, "bar", "input on_change receives typed text")
+picker_input.close(input_state)
+print("input on_change defer: ok")
+
+-- Test: input paste updates text and notifies
+local paste_change_text = nil
+local paste_state = picker_input.open({
+  prompt = "Paste",
+  row = 0,
+  col = 0,
+  width = 20,
+  on_change = function(text)
+    paste_change_text = text
+  end,
+})
+vim.fn.setreg('"', "beta\nignored")
+picker_input.paste(paste_state)
+vim.wait(200, function() return paste_change_text == "beta ignored" end, 10)
+assert_eq(vim.api.nvim_buf_get_lines(paste_state.buf, 0, 1, false)[1], "beta ignored", "paste writes one input line")
+assert_eq(paste_change_text, "beta ignored", "paste notifies input change")
+picker_input.close(paste_state)
+print("input paste updates: ok")
+
+-- Test: native multiline paste collapses and refreshes query
+local multiline_change_text = nil
+local multiline_state = picker_input.open({
+  prompt = "Multiline",
+  row = 0,
+  col = 0,
+  width = 20,
+  on_change = function(text)
+    multiline_change_text = text
+  end,
+})
+vim.api.nvim_buf_set_lines(multiline_state.buf, 0, -1, false, { "alpha", "beta" })
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = multiline_state.buf })
+vim.wait(200, function() return multiline_change_text == "alpha beta" end, 10)
+assert_eq(vim.api.nvim_buf_line_count(multiline_state.buf), 1, "multiline paste collapses input")
+assert_eq(multiline_change_text, "alpha beta", "multiline paste notifies collapsed query")
+picker_input.refresh(multiline_state)
+vim.wait(200, function() return multiline_change_text == "alpha beta" end, 10)
+picker_input.close(multiline_state)
+print("input multiline paste: ok")
+
+-- Test: input_only + empty candidates opens input float (grep_picker path)
+local grep_open_ok, grep_err = pcall(function()
+  picker.select_items({}, {
+    prompt = "Grep",
+    input_mode = true,
+    input_only = true,
+    layout = "intellij_grep",
+    preview = function(item) return item and item.filename end,
+    dynamic_items = function(_state, cb) cb({}) return nil end,
+    debounce_ms = 140,
+  }, function() end)
+end)
+assert_true(grep_open_ok, "input_only empty open: " .. tostring(grep_err))
+local has_input_float = false
+for _, win in ipairs(vim.api.nvim_list_wins()) do
+  local cfg = vim.api.nvim_win_get_config(win)
+  if cfg.relative == "editor" and cfg.height == 1 then
+    has_input_float = true
+    break
+  end
+end
+assert_true(has_input_float, "input_only empty open creates input float")
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>q", true, false, true), "x", false)
+print("input_only empty open: ok")
 
 print("ALL PICKER TESTS PASSED")

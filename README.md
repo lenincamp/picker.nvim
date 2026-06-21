@@ -127,7 +127,7 @@ Each item can be a table with:
 | `max_results`    | number          | Items per page                                           |
 | `multi_select`   | boolean         | Allow marking multiple items                             |
 | `submit_query`   | function(query, state) | Called on `<CR>` when no item is selected         |
-| `dynamic_items`  | function(query, state) | Live-fetch items as user types                    |
+| `dynamic_items`  | function(state) or function(state, cb) | Sync or async live-fetch items as user types. Async (2-arg) spawns return a proc handle for auto-cancellation |
 | `actions`        | table           | Custom keymap actions `{ ["<C-x>"] = fn }`               |
 | `query`          | string          | Initial query string                                     |
 | `search`         | boolean         | Enable filtering (default: true)                         |
@@ -159,6 +159,68 @@ Reopen the last quickfix search (e.g., resume grep results).
 ### `require("picker").setup(opts)`
 
 Apply configuration. Called automatically by lazy.nvim with `opts = {}`.
+
+### Built-in Sources (`require("picker.sources")`)
+
+Async process-backed sources for grep and file search. These return a 2-arg `dynamic_items` function that spawns `rg`/`fd` asynchronously via `vim.uv.spawn`, with automatic process cancellation on each keystroke.
+
+#### `sources.grep(opts)`
+
+Live ripgrep search. Returns a `dynamic_items(state, callback)` function.
+
+```lua
+local picker = require("picker")
+local sources = require("picker.sources")
+
+picker.select_items({}, picker.with_layout({
+  prompt = "Grep",
+  input_mode = true,
+  preview_open = true,
+  dynamic_items = sources.grep({ cwd = vim.uv.cwd() }),
+  preview = function(item) return item and item.path end,
+}), function(item)
+  vim.cmd("edit " .. vim.fn.fnameescape(item.path))
+  vim.api.nvim_win_set_cursor(0, { item.lnum, math.max((item.col or 1) - 1, 0) })
+end)
+```
+
+Options: `cwd`, `cmd` (default `"rg"`), `extra_args`, `limit` (default 5000), `min_chars` (default 2), `glob`.
+
+#### `sources.files(opts)`
+
+Live file search via `fd`. Returns a `dynamic_items(state, callback)` function.
+
+```lua
+picker.select_items({}, picker.with_layout({
+  prompt = "Files",
+  input_mode = true,
+  dynamic_items = sources.files({ cwd = vim.uv.cwd() }),
+  preview = function(item) return item and item.path end,
+}), function(item)
+  vim.cmd("edit " .. vim.fn.fnameescape(item.path))
+end)
+```
+
+Options: `cwd`, `cmd` (default `"fd"`), `extra_args`, `limit` (default 5000), `hidden` (default false).
+
+### Async Process Runner (`require("picker.proc")`)
+
+Low-level async subprocess runner using `vim.uv.spawn`. Used internally by sources, but available for custom integrations.
+
+```lua
+local proc = require("picker.proc")
+local handle = proc.spawn({
+  cmd = "rg",
+  args = { "--color=never", "--no-heading", "-n", "pattern", "." },
+  cwd = vim.uv.cwd(),
+  limit = 1000,
+  transform = function(line) return { label = line } end,
+  on_items = function(items) -- called incrementally end,
+  on_done = function(items, exit_code) -- called when process exits end,
+})
+-- Cancel at any time:
+proc.abort(handle)
+```
 
 ## Keymaps (inside picker)
 
@@ -202,9 +264,11 @@ Apply configuration. Called automatically by lazy.nvim with `opts = {}`.
 | `picker.navigation`  | Cursor movement, page scroll                |
 | `picker.preview`     | Preview path/content resolution             |
 | `picker.preview_window` | Preview float lifecycle and rendering    |
+| `picker.proc`        | Async subprocess runner (`vim.uv.spawn`)    |
 | `picker.quickfix`    | Quickfix list population                    |
 | `picker.render`      | Line rendering and highlighting             |
 | `picker.selection`   | Multi-select state                          |
+| `picker.sources`     | Built-in grep/files async sources           |
 | `picker.status`      | Status bar segments                         |
 | `picker.display`     | Label formatting utilities                  |
 | `picker.windows`     | Float window open/close                     |
