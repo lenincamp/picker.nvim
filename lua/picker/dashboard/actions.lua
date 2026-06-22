@@ -79,7 +79,6 @@ local builtin = {
   end,
   new = function()
     vim.cmd("enew")
-    vim.cmd("startinsert")
   end,
   quit = function()
     vim.cmd("qa")

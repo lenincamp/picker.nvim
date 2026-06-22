@@ -196,6 +196,7 @@ function M.select_items(items, opts, on_choice)
         input_state = nil
       end
       _base_close()
+      vim.cmd("stopinsert")
     end
 
     local function select_index(index)
