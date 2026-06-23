@@ -2,6 +2,7 @@ local M = {}
 
 M.defaults = {
   layout = "intellij_grep",
+  input_spacing = 0,
   max_results = 40,
   debounce_ms = 25,
   preview_max_bytes = 300000,

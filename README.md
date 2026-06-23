@@ -75,6 +75,9 @@ require("picker").setup({
   preview_max_bytes = 300000,
   -- Max lines to render in preview
   preview_lines = 120,
+  -- Extra screen rows between input and picker/preview borders (input_mode only).
+  -- 0 = borders share a single line (compact), 1 = adjacent, 2+ = visible gap.
+  input_spacing = 0,
 })
 ```
 
@@ -134,6 +137,7 @@ Each item can be a table with:
 | `scope`          | string          | Scope identifier for filter persistence                  |
 | `fuzzy`          | boolean         | Enable fuzzy matching (default: true)                    |
 | `regex`          | boolean         | Treat query as regex pattern                             |
+| `input_spacing`  | number          | Extra rows between input and picker/preview (0=compact)  |
 
 ### `require("picker").with_layout(opts)`
 

@@ -1,5 +1,9 @@
 local M = {}
 
+M.INPUT_OUTER_ROWS = 2
+M.INPUT_ZINDEX = 65
+M.PREVIEW_ZINDEX = 60
+
 local function screen_size()
   return math.max(vim.o.columns, 20), math.max(vim.o.lines - vim.o.cmdheight - 2, 5)
 end
@@ -36,9 +40,15 @@ function M.calculate(opts)
     result.row = math.max(1, rows - result.height)
     result.col = 2
     result.preview_width = result.width
-    result.preview_height = math.max(5, result.row - 2)
     result.preview_row = 1
     result.preview_col = result.col
+    if input_mode then
+      local s = opts.input_spacing or 0
+      local input_row = math.max(0, result.row - M.INPUT_OUTER_ROWS - s)
+      result.preview_height = math.max(5, input_row - result.preview_row - 1 - s)
+    else
+      result.preview_height = math.max(5, result.row - 2)
+    end
     return result
   end
 
@@ -61,6 +71,11 @@ function M.calculate(opts)
   end
 
   return result
+end
+
+function M.input_row(candidates_row, spacing)
+  local s = spacing or 0
+  return math.max(0, candidates_row - M.INPUT_OUTER_ROWS - s)
 end
 
 function M.candidates_config(layout)
@@ -102,7 +117,7 @@ function M.preview_config(layout, maximized)
     height = layout.preview_height,
     style = "minimal",
     border = "single",
-    zindex = 60,
+    zindex = M.PREVIEW_ZINDEX,
     focusable = false,
     noautocmd = true,
   }

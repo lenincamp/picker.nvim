@@ -59,7 +59,7 @@ function M.open(opts)
     border = "single",
     title = title,
     title_pos = "left",
-    zindex = 60,
+    zindex = opts.zindex or 65,
     focusable = true,
   })
 

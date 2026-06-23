@@ -29,11 +29,6 @@ function M.lines(opts, state)
     page_start = math.max(1, total - state.max_results + 1)
   end
 
-  local visible_limit = math.max(1, state.height - 3)
-  local page_end = math.min(total, page_start + visible_limit - 1)
-  local title = single_line(state.prompt)
-    .. (state.current_query ~= "" and (" /" .. single_line(state.current_query)) or "")
-    .. (state.current_filter_label and (" [" .. single_line(state.current_filter_label) .. "]") or "")
   local filters = opts.filters or opts.quick_filters
   local status_line = picker_status.segments(opts, {
     choosing_quick_filter = state.choosing_quick_filter,
@@ -45,10 +40,17 @@ function M.lines(opts, state)
     group_help = opts.group_item and "  [g/]g=group" or "",
     total = total,
   })
-  local lines = {
-    picker_display.padded_line(title, state.width),
-    picker_display.padded_line(single_line(status_line), state.width),
-  }
+  local header_lines = opts.input_mode and 1 or 2
+  local visible_limit = math.max(1, state.height - header_lines - 1)
+  local page_end = math.min(total, page_start + visible_limit - 1)
+  local lines = {}
+  if not opts.input_mode then
+    local title = single_line(state.prompt)
+      .. (state.current_query ~= "" and (" /" .. single_line(state.current_query)) or "")
+      .. (state.current_filter_label and (" [" .. single_line(state.current_filter_label) .. "]") or "")
+    lines[#lines + 1] = picker_display.padded_line(title, state.width)
+  end
+  lines[#lines + 1] = picker_display.padded_line(single_line(status_line), state.width)
   local item_highlights = {}
 
   for index = page_start, page_end do
@@ -88,8 +90,8 @@ function M.lines(opts, state)
   }
 end
 
-function M.highlight(bufnr, namespace, rendered)
-  picker_status.highlight(bufnr, namespace, rendered.status_line)
+function M.highlight(bufnr, namespace, rendered, opts)
+  picker_status.highlight(bufnr, namespace, rendered.status_line, opts)
   for _, range in ipairs(rendered.item_highlights or {}) do
     vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerMatch", range.line - 1, range.from, range.to)
   end

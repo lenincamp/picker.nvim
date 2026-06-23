@@ -73,4 +73,17 @@ assert_true(small.width >= 36, "small screen width fits")
 assert_true(small.height >= 5, "small screen height minimum")
 print("small screen: ok")
 
+vim.o.columns = 120
+vim.o.lines = 40
+local grep_input = layout.calculate({
+  has_preview = true,
+  input_mode = true,
+  layout = "intellij_grep",
+  max_results = 40,
+})
+local grep_plain = layout.calculate({ has_preview = true, layout = "intellij_grep", max_results = 40 })
+assert_true(grep_input.preview_height < grep_plain.preview_height, "input_mode reserves space above list for input")
+assert_eq(layout.input_row(grep_input.row), grep_input.row - layout.INPUT_OUTER_ROWS, "input row above candidates")
+print("intellij input_mode preview: ok")
+
 print("ALL LAYOUT TESTS PASSED")

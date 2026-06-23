@@ -62,11 +62,17 @@ function M.segments(opts, state)
   return table.concat(parts, "  ")
 end
 
-function M.highlight(bufnr, namespace, line)
+function M.highlight(bufnr, namespace, line, opts)
+  opts = opts or {}
+  local status_row = opts.input_mode and 0 or 1
   picker_display.define_highlights()
   vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, 2)
-  vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerTitle", 0, 0, -1)
-  vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerStatus", 1, 0, -1)
+  if not opts.input_mode then
+    vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerTitle", 0, 0, -1)
+    vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerStatus", status_row, 0, -1)
+  else
+    vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerTitle", status_row, 0, -1)
+  end
   for key in line:gmatch("[%w%-%[%]/?<:]+") do
     local start = 1
     while true do
@@ -74,7 +80,7 @@ function M.highlight(bufnr, namespace, line)
       if not from then
         break
       end
-      vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerKey", 1, from - 1, to)
+      vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerKey", status_row, from - 1, to)
       start = to + 1
     end
   end

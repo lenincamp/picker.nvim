@@ -1,4 +1,5 @@
 local M = {}
+local config = require("picker.config")
 local picker_filter = require("picker.filter")
 local picker_filter_state = require("picker.filter_state")
 local picker_input = require("picker.input")
@@ -69,7 +70,8 @@ function M.select_items(items, opts, on_choice)
     local filter_generation = 0
     local selected = {}
     local page_start = 1
-    local cursor_row = 3 -- tracks selected row in candidates (1-indexed buffer line)
+    local item_row = opts.input_mode and 2 or 3
+    local cursor_row = item_row -- tracks selected row in candidates (1-indexed buffer line)
     local has_preview = type(opts.preview) == "function" or type(opts.preview_lines) == "function"
     local preview_enabled = has_preview and opts.preview_open == true
     local preview_maximized = false
@@ -84,6 +86,7 @@ function M.select_items(items, opts, on_choice)
         has_preview = has_preview,
         layout = picker_layout,
         input_mode = opts.input_mode,
+        input_spacing = opts.input_spacing or config.current.input_spacing,
         max_results = max_results,
         position = opts.position,
       })
@@ -101,7 +104,7 @@ function M.select_items(items, opts, on_choice)
       if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
       vim.api.nvim_buf_clear_namespace(candidates_buf, cursor_namespace, 0, -1)
       local line_count = vim.api.nvim_buf_line_count(candidates_buf)
-      if cursor_row >= 3 and cursor_row <= line_count then
+      if cursor_row >= item_row and cursor_row <= line_count then
         vim.api.nvim_buf_set_extmark(candidates_buf, cursor_namespace, cursor_row - 1, 0, {
           line_hl_group = "CursorLine",
           hl_eol = true,
@@ -138,14 +141,14 @@ function M.select_items(items, opts, on_choice)
       vim.bo[candidates_buf].modifiable = true
       vim.api.nvim_buf_set_lines(candidates_buf, 0, -1, false, rendered.lines)
       vim.bo[candidates_buf].modifiable = false
-      picker_render.highlight(candidates_buf, picker_namespace, rendered)
+      picker_render.highlight(candidates_buf, picker_namespace, rendered, opts)
 
       -- Clamp cursor_row to valid range after content changes
       local last_line = #rendered.lines
-      if last_line < 3 then
+      if last_line < item_row then
         cursor_row = math.max(1, last_line)
       else
-        cursor_row = math.max(3, math.min(cursor_row, last_line))
+        cursor_row = math.max(item_row, math.min(cursor_row, last_line))
       end
 
       if vim.api.nvim_win_is_valid(candidates_win) then
@@ -157,11 +160,28 @@ function M.select_items(items, opts, on_choice)
     local function current_item()
       if not candidates_win or not vim.api.nvim_win_is_valid(candidates_win) then return nil end
       local row = vim.api.nvim_win_get_cursor(candidates_win)[1]
-      return current_candidates[page_start + row - 3]
+      return current_candidates[page_start + row - item_row]
     end
 
     local function close_preview()
       preview_win, preview_buf = picker_preview_window.close(preview_win, preview_buf)
+    end
+
+    local input_state = nil
+
+    local function sync_input_window()
+      if not opts.input_mode or not input_state or not input_state.win then
+        return
+      end
+      if not vim.api.nvim_win_is_valid(input_state.win) then
+        return
+      end
+      pcall(vim.api.nvim_win_set_config, input_state.win, {
+        zindex = picker_layout_mod.INPUT_ZINDEX,
+        row = picker_layout_mod.input_row(layout.row, opts.input_spacing or config.current.input_spacing),
+        col = layout.col,
+        width = layout.width,
+      })
     end
 
     local function update_preview()
@@ -172,11 +192,11 @@ function M.select_items(items, opts, on_choice)
         namespace = preview_namespace,
         picker_opts = opts,
       })
+      sync_input_window()
     end
 
     local async_proc = nil
     local debounce_timer = uv.new_timer()
-    local input_state = nil
 
     local function abort_async()
       picker_proc.abort(async_proc)
@@ -229,7 +249,7 @@ function M.select_items(items, opts, on_choice)
         return
       end
       local row = vim.api.nvim_win_get_cursor(candidates_win)[1]
-      select_index(row - 2)
+      select_index(row - item_row + 1)
     end
 
     local function open_split(command)
@@ -264,7 +284,7 @@ function M.select_items(items, opts, on_choice)
     end
 
     local function move_cursor(delta)
-      if picker_navigation.move_cursor(candidates_win, current_candidates, page_start, height, delta) then
+      if picker_navigation.move_cursor(candidates_win, current_candidates, page_start, height, delta, item_row) then
         cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
         highlight_cursor_line()
         update_preview()
@@ -364,7 +384,7 @@ function M.select_items(items, opts, on_choice)
           current_candidates = next_candidates
           choosing_quick_filter = false
           page_start = 1
-          cursor_row = 3
+          cursor_row = item_row
           if not opts.input_mode then
             vim.api.nvim_set_current_win(candidates_win)
           end
@@ -467,17 +487,17 @@ function M.select_items(items, opts, on_choice)
     end
 
     local function page(delta)
-      local next_start, changed = picker_navigation.page(current_candidates, page_start, height, delta)
+      local next_start, changed = picker_navigation.page(current_candidates, page_start, height, delta, item_row)
       if changed then
         page_start = next_start
-        cursor_row = 3
+        cursor_row = item_row
         render()
         update_preview()
       end
     end
 
     local function page_up_or_top()
-      local next_start, changed = picker_navigation.page_up_or_top(candidates_win, current_candidates, page_start, height)
+      local next_start, changed = picker_navigation.page_up_or_top(candidates_win, current_candidates, page_start, height, item_row)
       if changed then
         page_start = next_start
         cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
@@ -487,7 +507,7 @@ function M.select_items(items, opts, on_choice)
     end
 
     local function jump_group(delta)
-      local next_start, group_row = picker_navigation.jump_group(opts, candidates_win, current_candidates, page_start, height, delta)
+      local next_start, group_row = picker_navigation.jump_group(opts, candidates_win, current_candidates, page_start, height, delta, item_row)
       if group_row then
         page_start = next_start
         cursor_row = group_row
@@ -506,6 +526,7 @@ function M.select_items(items, opts, on_choice)
       else
         preview_maximized = false
         close_preview()
+        sync_input_window()
       end
     end
 
@@ -556,6 +577,7 @@ function M.select_items(items, opts, on_choice)
 
       render()
       update_preview()
+      sync_input_window()
     end
 
     local function toggle_descriptions()
@@ -574,7 +596,7 @@ function M.select_items(items, opts, on_choice)
 
     local function update_inline_query(next_query)
       current_query = next_query or ""
-      cursor_row = 3
+      cursor_row = item_row
       filter_generation = filter_generation + 1
       local generation = filter_generation
       local ms = type(opts.dynamic_items) == "function" and math.max(tonumber(opts.debounce_ms) or 200, 50) or math.max(tonumber(opts.debounce_ms) or 25, 5)
@@ -705,12 +727,13 @@ function M.select_items(items, opts, on_choice)
       update_preview()
 
       -- Open real input buffer
-      local input_row = math.max(0, layout.row - 3)
+      local input_row = picker_layout_mod.input_row(layout.row, opts.input_spacing or config.current.input_spacing)
       input_state = picker_input.open({
         prompt = prompt,
         row = input_row,
         col = layout.col,
         width = layout.width,
+        zindex = picker_layout_mod.INPUT_ZINDEX,
         initial = current_query,
         debounce_ms = tonumber(opts.input_debounce_ms) or 35,
         on_change = function(text)
@@ -828,7 +851,6 @@ function M.setup(opts)
   picker_opts.dashboard = nil
   picker_opts.keymaps = nil
 
-  local config = require("picker.config")
   config.apply(picker_opts)
   if picker_opts.layout == "intellij_grep" then
     intellij_grep = true
