@@ -38,6 +38,7 @@ local function base_picker_opts(opts)
   return {
     scope = opts.scope or "project",
     search_threshold = 0,
+    input_spacing = opts.input_spacing,
     filters = opts.filters or util.filters(),
     preview = function(item)
       return item.filename or item.path

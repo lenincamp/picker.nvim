@@ -499,9 +499,15 @@ function M.select_items(items, opts, on_choice)
     local function page_up_or_top()
       local next_start, changed = picker_navigation.page_up_or_top(candidates_win, current_candidates, page_start, height, item_row)
       if changed then
+        local paged = next_start ~= page_start
         page_start = next_start
-        cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
-        highlight_cursor_line()
+        if paged then
+          cursor_row = item_row
+          render()
+        else
+          cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
+          highlight_cursor_line()
+        end
         update_preview()
       end
     end
