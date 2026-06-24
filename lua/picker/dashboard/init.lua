@@ -8,6 +8,16 @@ local M = {}
 
 M._setup_done = false
 
+local function dashboard_keymap_opts(bufnr, desc)
+  return {
+    buffer = bufnr,
+    silent = true,
+    nowait = true,
+    noremap = true,
+    desc = desc,
+  }
+end
+
 local function cleanup_shadow_buffers()
   local current = vim.api.nvim_get_current_buf()
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -30,16 +40,32 @@ local function apply_keymaps(bufnr)
   for _, btn in ipairs(config_mod.current.buttons) do
     vim.keymap.set("n", btn.key, function()
       actions.run(btn.action)
-    end, {
-      buffer = bufnr,
-      silent = true,
-      nowait = true,
-      noremap = true,
-      desc = "Dashboard: " .. btn.desc,
-    })
+    end, dashboard_keymap_opts(bufnr, "Dashboard: " .. btn.desc))
   end
 
   vim.b[bufnr].picker_dashboard_keymaps_applied = true
+end
+
+local function disable_miniclue(bufnr)
+  vim.b[bufnr].miniclue_disable = true
+  pcall(function()
+    require("mini.clue").disable_buf_triggers(bufnr)
+  end)
+end
+
+local function refresh_keymaps_after_lazyload()
+  -- Run after other LazyLoad handlers (e.g. mini.clue ensure_buf_triggers).
+  vim.schedule(function()
+    vim.schedule(function()
+      for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_valid(bufnr) and window.is_dashboard_buffer(bufnr) then
+          disable_miniclue(bufnr)
+          vim.b[bufnr].picker_dashboard_keymaps_applied = nil
+          apply_keymaps(bufnr)
+        end
+      end
+    end)
+  end)
 end
 
 local function setup_buffer(bufnr)
@@ -50,6 +76,7 @@ local function setup_buffer(bufnr)
     return
   end
 
+  disable_miniclue(bufnr)
   window.apply_options()
   apply_keymaps(bufnr)
 
@@ -144,6 +171,12 @@ function M.setup(opts)
         M.open()
       end
     end,
+  })
+
+  vim.api.nvim_create_autocmd("User", {
+    group = vim.api.nvim_create_augroup("PickerDashboardLazyLoad", { clear = true }),
+    pattern = "LazyLoad",
+    callback = refresh_keymaps_after_lazyload,
   })
 end
 
