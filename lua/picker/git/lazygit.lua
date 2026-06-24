@@ -65,6 +65,11 @@ function M.open(cwd)
   vim.bo[buffer].bufhidden = "wipe"
   vim.b[buffer][BUFFER_FLAG] = true
 
+  vim.api.nvim_create_autocmd({ "TermOpen", "BufEnter", "WinEnter" }, {
+    buffer = buffer,
+    callback = prepare_terminal_window,
+  })
+
   vim.fn.termopen(lazygit_cmd(), {
     cwd = cwd or vim.fn.getcwd(),
     on_exit = function()
@@ -78,7 +83,7 @@ function M.open(cwd)
       end)
     end,
   })
-  prepare_terminal_window()
+  vim.schedule(prepare_terminal_window)
   vim.cmd("startinsert")
 end
 
