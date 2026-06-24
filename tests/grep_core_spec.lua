@@ -35,6 +35,9 @@ assert_true(vim.tbl_contains(args, "--no-ignore"), "rg_args ignored")
 assert_true(vim.tbl_contains(args, "-F"), "rg_args fixed strings")
 assert_true(vim.tbl_contains(args, "needle"), "rg_args pattern")
 assert_true(vim.tbl_contains(args, "!.git"), "rg_args excludes git")
+local word_args = grep_core.rg_args({ word = true }, "needle", true)
+assert_true(vim.tbl_contains(word_args, "-w"), "rg_args word")
+assert_true(vim.tbl_contains(word_args, "-F"), "rg_args word fixed")
 local has_lua_glob = false
 for _, arg in ipairs(args) do
   if arg == "*.lua" then

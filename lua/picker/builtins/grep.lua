@@ -19,7 +19,7 @@ local function preview_match(opts, item)
   return {
     lnum = item.lnum,
     col = item.col,
-    length = (opts.regex and not opts.word) and nil or #query,
+    length = opts.regex and nil or #query,
   }
 end
 
@@ -91,7 +91,7 @@ function M.grep_picker(opts)
   local source_opts = vim.tbl_extend("force", opts, {
     cwd = cwd,
     fuzzy = opts.fuzzy ~= false,
-    regex = opts.regex ~= false,
+    regex = opts.regex == true,
   })
 
   local picker_opts = vim.tbl_extend("force", base_picker_opts(opts), {
@@ -109,7 +109,7 @@ function M.grep_picker(opts)
         cwd = cwd,
         fuzzy = opts.fuzzy ~= false,
         query = query,
-        regex = opts.regex ~= false,
+        regex = opts.regex == true,
         preview = true,
         preview_open = true,
         layout = "intellij_grep",
@@ -127,7 +127,6 @@ end
 function M.grep_word(opts)
   opts = opts or {}
   opts.query = util.selected_text_or_word()
-  opts.regex = true
   opts.word = true
   M.grep(opts)
 end

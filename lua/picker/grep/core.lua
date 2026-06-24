@@ -155,6 +155,9 @@ function M.rg_args(opts, pattern, fixed)
   if fixed then
     args[#args + 1] = "-F"
   end
+  if opts.word then
+    args[#args + 1] = "-w"
+  end
   vim.list_extend(args, util.file_glob_args(config.current.grep_exclude_globs))
   vim.list_extend(args, util.file_glob_args(opts.glob))
   args[#args + 1] = pattern
@@ -189,10 +192,7 @@ local function spawn_rg(dir, opts, pattern, fixed, on_done, query)
   })
 end
 
-local function search_pattern(opts, query)
-  if opts.word then
-    return "\\b" .. util.regex_escape(query) .. "\\b"
-  end
+local function search_pattern(_opts, query)
   return query
 end
 
@@ -212,7 +212,7 @@ function M.collect_items(opts, query)
   local dirs = opts.dirs or { cwd }
   local items = {}
   local pattern = search_pattern(opts, query)
-  local fixed = not opts.regex and not opts.word
+  local fixed = not opts.regex
   local fuzzy_allowed = allow_fuzzy(opts, query)
 
   for _, dir in ipairs(dirs) do
@@ -243,16 +243,18 @@ function M.collect_file_items(file, query, opts)
 
   file = vim.fs.normalize(file)
   local dir = vim.fn.fnamemodify(file, ":h")
-  local pattern = search_pattern(opts, query)
-  local fixed = not opts.regex and not opts.word
+  local fixed = not opts.regex
 
   local function run(use_fixed)
     local command = { "rg", "--vimgrep", "--smart-case" }
     if use_fixed then
       command[#command + 1] = "-F"
     end
+    if opts.word then
+      command[#command + 1] = "-w"
+    end
     command[#command + 1] = "--"
-    command[#command + 1] = use_fixed and query or pattern
+    command[#command + 1] = query
     command[#command + 1] = file
     local result = vim.system(command, { text = true }):wait()
     local stdout = result and result.stdout or ""
@@ -287,7 +289,7 @@ function M.collect_items_async(opts, query, callback)
 
   local dirs = opts.dirs or { cwd }
   local pattern = search_pattern(opts, query)
-  local fixed = not opts.regex and not opts.word
+  local fixed = not opts.regex
   local fuzzy_allowed = allow_fuzzy(opts, query)
 
   local pending = #dirs

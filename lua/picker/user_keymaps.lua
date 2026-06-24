@@ -36,23 +36,23 @@ local specs = {
   { mode = "n", lhs = "<leader>sC", desc = "Commands", action = function() picker().commands() end },
   { mode = "n", lhs = "<leader>sd", desc = "Document Diagnostics", action = function() picker().diagnostics({ buffer = true }) end },
   { mode = "n", lhs = "<leader>sD", desc = "Workspace Diagnostics", action = function() picker().diagnostics() end },
-  { mode = "n", lhs = "<leader>sG", desc = "Grep Regex (root)", action = function()
+  { mode = "n", lhs = "<leader>sG", desc = "Grep (root)", action = function()
     local p = picker()
-    p.grep_picker({ cwd = p.root(), title = "Grep Regex (root)" })
+    p.grep_picker({ cwd = p.root(), title = "Grep (root)" })
   end },
-  { mode = "n", lhs = "<leader>sg", desc = "Grep Regex (cwd)", action = function()
-    picker().grep_picker({ title = "Grep Regex (cwd)" })
+  { mode = "n", lhs = "<leader>sg", desc = "Grep (cwd)", action = function()
+    picker().grep_picker({ title = "Grep (cwd)" })
   end },
-  { mode = "n", lhs = "<leader>s/", desc = "Grep Regex (root)", action = function()
+  { mode = "n", lhs = "<leader>s/", desc = "Grep (root)", action = function()
     local p = picker()
-    p.grep({ cwd = p.root(), regex = true, title = "Grep Regex (root)" })
+    p.grep({ cwd = p.root(), title = "Grep (root)" })
   end },
-  { mode = "n", lhs = "<leader>si", desc = "Grep Ignored Literal (cwd)", action = function()
-    picker().grep({ ignored = true, regex = false, title = "Grep Ignored Literal (cwd)" })
+  { mode = "n", lhs = "<leader>si", desc = "Grep Ignored (cwd)", action = function()
+    picker().grep({ ignored = true, title = "Grep Ignored (cwd)" })
   end },
-  { mode = "n", lhs = "<leader>sI", desc = "Grep Ignored Literal (root)", action = function()
+  { mode = "n", lhs = "<leader>sI", desc = "Grep Ignored (root)", action = function()
     local p = picker()
-    p.grep({ cwd = p.root(), ignored = true, regex = false, title = "Grep Ignored Literal (root)" })
+    p.grep({ cwd = p.root(), ignored = true, title = "Grep Ignored (root)" })
   end },
   { mode = "n", lhs = "<leader>sh", desc = "Help", action = function() picker().help() end },
   { mode = "n", lhs = "<leader>sk", desc = "Keymaps", action = function() picker().keymaps() end },
