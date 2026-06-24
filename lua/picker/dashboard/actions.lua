@@ -10,12 +10,14 @@ end
 function M.project_roots()
   local roots = {}
   local seen = {}
+  local home = vim.fs.normalize(vim.loop.os_homedir())
   local markers = picker_config.current.project_markers
   for _, path in ipairs(vim.v.oldfiles or {}) do
     local dir = vim.fs.dirname(vim.fs.normalize(vim.fn.fnamemodify(path, ":p")))
     local root = dir and vim.fs.root(dir, markers) or nil
     root = root or dir
-    if root and root ~= "" and not seen[root] and vim.fn.isdirectory(root) == 1 then
+    root = root and vim.fs.normalize(root) or nil
+    if root and root ~= "" and root ~= home and not seen[root] and vim.fn.isdirectory(root) == 1 then
       seen[root] = true
       roots[#roots + 1] = { label = vim.fn.fnamemodify(root, ":~"), path = root }
     end
@@ -70,11 +72,6 @@ local builtin = {
     })
   end,
   session = function()
-    local custom = require("picker.dashboard.config").current.actions.session
-    if type(custom) == "function" then
-      custom()
-      return
-    end
     notify("Dashboard session action is not configured", vim.log.levels.INFO)
   end,
   new = function()
