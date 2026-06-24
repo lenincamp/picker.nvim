@@ -5,6 +5,7 @@ M.defaults = {
   input_spacing = 0,
   max_results = 40,
   debounce_ms = 25,
+  filter_history_max = 100,
   preview_max_bytes = 300000,
   preview_lines = 120,
   root_markers = { ".git", "pom.xml", "package.json", "build.gradle" },

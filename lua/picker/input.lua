@@ -207,6 +207,21 @@ function M.close(state)
   state.buf = nil
 end
 
+--- Replace input text without triggering debounced on_change.
+--- @param state picker.InputState
+--- @param text string
+function M.set_text(state, text)
+  if state.closed or not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+    return
+  end
+  text = single_line(text or "")
+  vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, { text })
+  if state.win and vim.api.nvim_win_is_valid(state.win) then
+    vim.api.nvim_win_set_cursor(state.win, { 1, #text })
+  end
+  state.last_text = text
+end
+
 --- Focus the input window in insert mode.
 --- @param state picker.InputState
 function M.focus(state)

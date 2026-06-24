@@ -13,6 +13,7 @@ local picker_quickfix = require("picker.quickfix")
 local picker_render = require("picker.render")
 local picker_selection = require("picker.selection")
 local picker_windows = require("picker.windows")
+local picker_history = require("picker.history")
 
 local uv = vim.uv or vim.loop
 local intellij_grep = true
@@ -29,6 +30,14 @@ function M.select_items(items, opts, on_choice)
   if #items == 0 and not opts.input_only then
     notify((opts and opts.prompt or "Select") .. ": no results", vim.log.levels.WARN)
     return
+  end
+
+  local origin_win = vim.api.nvim_get_current_win()
+  local function finish_choice(...)
+    if origin_win and vim.api.nvim_win_is_valid(origin_win) then
+      vim.api.nvim_set_current_win(origin_win)
+    end
+    on_choice(...)
   end
 
   local prompt = opts.prompt or "Select"
@@ -77,6 +86,7 @@ function M.select_items(items, opts, on_choice)
     local preview_maximized = false
     local show_descriptions = false
     local picker_layout = opts.layout or (intellij_grep and "intellij_grep" or "default")
+    local filter_history = opts.filter_history ~= false and picker_history.new(opts.scope or prompt) or nil
     local layout
     local width, height
     local cursor_namespace = vim.api.nvim_create_namespace("native_picker_cursor")
@@ -100,6 +110,11 @@ function M.select_items(items, opts, on_choice)
       return picker_layout_mod.preview_config(layout, preview_maximized)
     end
 
+    local apply_filter_state
+    local record_filter_history
+    local history_back
+    local history_forward
+
     local function highlight_cursor_line()
       if not candidates_buf or not vim.api.nvim_buf_is_valid(candidates_buf) then return end
       vim.api.nvim_buf_clear_namespace(candidates_buf, cursor_namespace, 0, -1)
@@ -115,7 +130,7 @@ function M.select_items(items, opts, on_choice)
     candidates_win, candidates_buf = picker_windows.open_candidates(picker_layout_mod.candidates_config(layout))
     if not candidates_win then
       close_candidates_window()
-      vim.ui.select(candidates, opts, on_choice)
+      vim.ui.select(candidates, opts, finish_choice)
       return
     end
 
@@ -135,6 +150,7 @@ function M.select_items(items, opts, on_choice)
         selected = selected,
         show_descriptions = show_descriptions,
         width = width,
+        filter_history = filter_history ~= nil,
       })
       page_start = rendered.page_start
 
@@ -223,8 +239,9 @@ function M.select_items(items, opts, on_choice)
       local actual_index = index and (page_start + index - 1) or nil
       if actual_index and current_candidates[actual_index] then
         local choice = current_candidates[actual_index]
+        record_filter_history()
         close_candidates_window()
-        on_choice(choice)
+        finish_choice(choice)
       end
     end
 
@@ -235,8 +252,9 @@ function M.select_items(items, opts, on_choice)
       if opts.multi_select then
         local chosen = picker_selection.selected_items(items, opts, selected)
         if #chosen > 0 then
+          record_filter_history()
           close_candidates_window()
-          on_choice(chosen)
+          finish_choice(chosen)
           return
         end
       end
@@ -244,6 +262,7 @@ function M.select_items(items, opts, on_choice)
         local query = vim.trim(current_query)
         local filter = current_quick_filter
         local regex_pattern = current_regex_pattern
+        record_filter_history()
         close_candidates_window()
         opts.submit_query(query, { filter = filter, regex_pattern = regex_pattern })
         return
@@ -257,6 +276,9 @@ function M.select_items(items, opts, on_choice)
       local path = picker_preview.path(opts, item)
       if path then
         close_candidates_window()
+        if origin_win and vim.api.nvim_win_is_valid(origin_win) then
+          vim.api.nvim_set_current_win(origin_win)
+        end
         vim.cmd(command .. " " .. vim.fn.fnameescape(path))
         if item and item.lnum then
           vim.api.nvim_win_set_cursor(0, { item.lnum, math.max((item.col or 1) - 1, 0) })
@@ -272,7 +294,11 @@ function M.select_items(items, opts, on_choice)
         return
       end
 
+      record_filter_history()
       close_candidates_window()
+      if origin_win and vim.api.nvim_win_is_valid(origin_win) then
+        vim.api.nvim_set_current_win(origin_win)
+      end
       local title = (opts.quickfix_title or prompt) .. (current_query ~= "" and (" /" .. current_query) or "")
       vim.fn.setqflist({}, " ", { title = title, items = qf_items })
       last_qf_title = title
@@ -291,7 +317,7 @@ function M.select_items(items, opts, on_choice)
       end
     end
 
-    local function apply_filter_state(empty_message)
+    apply_filter_state = function(empty_message)
       local filter_state = {
         all_files = current_all_files,
         query = current_query,
@@ -396,6 +422,68 @@ function M.select_items(items, opts, on_choice)
         end
       )
       return true
+    end
+
+    local function current_history_entry()
+      return {
+        query = current_query,
+        filter_key = current_quick_filter and current_quick_filter.key or nil,
+        regex_pattern = current_regex_pattern,
+        all_files = current_all_files,
+      }
+    end
+
+    local function resolve_quick_filter(filter_key)
+      if not filter_key then
+        return nil
+      end
+      for _, filter in ipairs(opts.filters or opts.quick_filters or {}) do
+        if filter.key == filter_key then
+          return filter
+        end
+      end
+      return nil
+    end
+
+    local function apply_history_entry(entry)
+      if not entry then
+        return
+      end
+      current_query = entry.query or ""
+      current_all_files = entry.all_files == true
+      current_regex_pattern = entry.regex_pattern
+      current_quick_filter = resolve_quick_filter(entry.filter_key)
+      if input_state then
+        picker_input.set_text(input_state, current_query)
+      end
+      apply_filter_state()
+    end
+
+    record_filter_history = function()
+      if not filter_history then
+        return
+      end
+      filter_history:commit(current_history_entry())
+    end
+
+    history_back = function()
+      if not filter_history then
+        return
+      end
+      local entry = filter_history:back(current_history_entry())
+      if entry then
+        apply_history_entry(entry)
+      end
+    end
+
+    history_forward = function()
+      if not filter_history then
+        return
+      end
+      local entry = filter_history:forward()
+      if entry then
+        apply_history_entry(entry)
+      end
     end
 
     local function ask_filter()
@@ -663,9 +751,13 @@ function M.select_items(items, opts, on_choice)
         return
       end
 
-      if key == "j" or key == "<C-n>" or key == "<C-j>" then
+      if key == "<C-j>" then
+        history_back()
+      elseif key == "<C-k>" then
+        history_forward()
+      elseif key == "j" or key == "<C-n>" then
         move_cursor(1)
-      elseif key == "k" or key == "<C-p>" or key == "<C-k>" then
+      elseif key == "k" or key == "<C-p>" then
         move_cursor(-1)
       elseif key == "<CR>" then
         select_cursor()
@@ -783,6 +875,9 @@ function M.select_items(items, opts, on_choice)
         toggle_all_files = toggle_all_files,
         select_quick_filter_key = select_quick_filter_key,
         jump_group = jump_group,
+        history_back = history_back,
+        history_forward = history_forward,
+        filter_history = filter_history ~= nil,
       })
       render()
       update_preview()
@@ -801,7 +896,7 @@ function M.select_items(items, opts, on_choice)
     end
 
     if (not supports_filter or has_initial_query) and #candidates == 1 and opts.auto_select_single ~= false then
-      on_choice(candidates[1])
+      finish_choice(candidates[1])
       return
     end
 
@@ -810,7 +905,7 @@ function M.select_items(items, opts, on_choice)
       return
     end
 
-    vim.ui.select(candidates, opts, on_choice)
+    vim.ui.select(candidates, opts, finish_choice)
   end
 
   if has_initial_query then

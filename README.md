@@ -78,6 +78,8 @@ require("picker").setup({
   -- Extra screen rows between input and picker/preview borders (input_mode only).
   -- 0 = borders share a single line (compact), 1 = adjacent, 2+ = visible gap.
   input_spacing = 0,
+  -- Max remembered filter queries per picker scope
+  filter_history_max = 100,
 })
 ```
 
@@ -135,6 +137,7 @@ Each item can be a table with:
 | `query`          | string          | Initial query string                                     |
 | `search`         | boolean         | Enable filtering (default: true)                         |
 | `scope`          | string          | Scope identifier for filter persistence                  |
+| `filter_history` | boolean         | Remember queries/filters per scope (default: true)       |
 | `fuzzy`          | boolean         | Enable fuzzy matching (default: true)                    |
 | `regex`          | boolean         | Treat query as regex pattern                             |
 | `input_spacing`  | number          | Extra rows between input and picker/preview (0=compact)  |
@@ -230,6 +233,7 @@ proc.abort(handle)
 
 | Key         | Mode   | Action                                      |
 |-------------|--------|---------------------------------------------|
+| `C-j` / `C-k` | insert/normal (input mode) | Previous / next filter history |
 | `j` / `k`  | normal | Navigate items                              |
 | `<CR>`      | both   | Select item / submit query                  |
 | `<Esc>`     | insert | Switch to normal mode                       |
@@ -263,6 +267,7 @@ proc.abort(handle)
 | `picker.config`      | Default configuration and `setup()`         |
 | `picker.filter`      | Fuzzy matching, scoring, and filtering      |
 | `picker.filter_state`| Quick filter glob state management          |
+| `picker.history`     | Per-scope filter query persistence          |
 | `picker.keymaps`     | Buffer-local keymap setup                   |
 | `picker.layout`      | Window geometry calculations                |
 | `picker.navigation`  | Cursor movement, page scroll                |

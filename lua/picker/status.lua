@@ -43,6 +43,9 @@ function M.segments(opts, state)
   if not opts.input_mode then
     parts[#parts + 1] = "/"
   end
+  if state.filter_history then
+    vim.list_extend(parts, { "C-j", "C-k" })
+  end
   if picker_filter.has_filters(state.filters) then
     vim.list_extend(parts, { "F", "C", "R" })
   end

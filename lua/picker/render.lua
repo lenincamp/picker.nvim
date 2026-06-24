@@ -39,6 +39,7 @@ function M.lines(opts, state)
     show_descriptions = state.show_descriptions,
     group_help = opts.group_item and "  [g/]g=group" or "",
     total = total,
+    filter_history = state.filter_history,
   })
   local header_lines = opts.input_mode and 1 or 2
   local visible_limit = math.max(1, state.height - header_lines - 1)

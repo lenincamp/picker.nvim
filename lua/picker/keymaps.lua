@@ -28,6 +28,10 @@ function M.setup(args)
   set("k", function() args.move_cursor(-1) end, map_opts)
   set("<C-n>", function() args.move_cursor(1) end, map_opts)
   set("<C-p>", function() args.move_cursor(-1) end, map_opts)
+  if args.filter_history then
+    set("<C-j>", args.history_back, map_opts)
+    set("<C-k>", args.history_forward, map_opts)
+  end
   set("<C-u>", args.page_up_or_top, map_opts)
   set("<C-d>", function() args.page(1) end, map_opts)
   set("<C-f>", args.scroll_preview_down, map_opts)
