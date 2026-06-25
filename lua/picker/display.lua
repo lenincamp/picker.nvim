@@ -19,6 +19,12 @@ function M.define_highlights()
   vim.api.nvim_set_hl(0, "NativePickerTitle", title_hl)
   vim.api.nvim_set_hl(0, "NativePickerStatus", { link = "StatusLineNC", default = true })
   vim.api.nvim_set_hl(0, "NativePickerKey", { link = "Special", default = true })
+  local selection = vim.api.nvim_get_hl(0, { name = "PmenuSel", link = false })
+  if selection.fg or selection.bg then
+    vim.api.nvim_set_hl(0, "NativePickerSelection", { link = "PmenuSel" })
+  else
+    vim.api.nvim_set_hl(0, "NativePickerSelection", { link = "Visual" })
+  end
   local match_hl = vim.api.nvim_get_hl(0, { name = "IncSearch", link = false })
   if not match_hl.fg and not match_hl.bg then
     match_hl = vim.api.nvim_get_hl(0, { name = "Search", link = false })

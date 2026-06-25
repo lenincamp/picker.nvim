@@ -30,7 +30,6 @@ function M.open_candidates(layout_config)
   end
 
   vim.wo[win].wrap = false
-  vim.wo[win].cursorline = true
   return win, bufnr
 end
 

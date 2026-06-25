@@ -121,7 +121,7 @@ function M.select_items(items, opts, on_choice)
       local line_count = vim.api.nvim_buf_line_count(candidates_buf)
       if cursor_row >= item_row and cursor_row <= line_count then
         vim.api.nvim_buf_set_extmark(candidates_buf, cursor_namespace, cursor_row - 1, 0, {
-          line_hl_group = "CursorLine",
+          line_hl_group = "NativePickerSelection",
           hl_eol = true,
         })
       end
