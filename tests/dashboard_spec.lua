@@ -57,4 +57,10 @@ local window = require("picker.dashboard.window")
 config.apply({ open_on_startup = true })
 assert_true(type(window.should_open()) == "boolean", "should_open returns boolean")
 
+-- dashboard buffers do not render gutter line numbers
+local gutter = require("picker.gutter")
+vim.bo.filetype = config.current.filetype
+assert_true(not gutter.is_file_window(vim.api.nvim_get_current_win()), "dashboard is not a file window")
+assert_eq(gutter.status_number(), "", "dashboard status number hidden")
+
 print("dashboard: ok")

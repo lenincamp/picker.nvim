@@ -50,7 +50,6 @@ function M.apply_options(win)
   vim.wo[win].list = false
   vim.wo[win].foldcolumn = "0"
   vim.wo[win].signcolumn = "no"
-  vim.wo[win].statuscolumn = ""
   vim.wo[win].winbar = ""
 end
 

@@ -40,7 +40,6 @@ local function prepare_terminal_window()
   vim.wo.number = false
   vim.wo.relativenumber = false
   vim.wo.signcolumn = "no"
-  vim.wo.statuscolumn = ""
 end
 
 function M.open(cwd)
