@@ -1,10 +1,13 @@
 local config = require("picker.config")
 local util = require("picker.util")
+---@diagnostic disable-next-line: undefined-global
+local vim = vim
 
 local M = {}
 
 local BUFFER_FLAG = "picker_lazygit"
 local LEGACY_BUFFER_FLAG = "native_lazygit"
+local CONFIG_FLAG = "picker_lazygit_config"
 
 local function lazygit_cmd()
   local cmd = (config.current.git or {}).lazygit_cmd or { "lazygit" }
@@ -48,9 +51,12 @@ function M.open(cwd)
     return
   end
 
+  local current_config = vim.env.LG_CONFIG_FILE or ""
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_valid(buf) and is_lazygit_buffer(buf) then
-      if focus_buffer_window(buf) then
+      if (vim.b[buf][CONFIG_FLAG] or "") ~= current_config then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      elseif focus_buffer_window(buf) then
         prepare_terminal_window()
         vim.cmd("startinsert")
         return
@@ -64,6 +70,7 @@ function M.open(cwd)
   vim.bo[buffer].buflisted = false
   vim.bo[buffer].bufhidden = "wipe"
   vim.b[buffer][BUFFER_FLAG] = true
+  vim.b[buffer][CONFIG_FLAG] = current_config
 
   vim.api.nvim_create_autocmd({ "TermOpen", "BufEnter", "WinEnter" }, {
     buffer = buffer,

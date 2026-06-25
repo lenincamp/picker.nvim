@@ -12,7 +12,6 @@ function M.define_highlights()
     fg = accent.fg or status.fg,
     bg = status.bg or float.bg or menu.bg,
     bold = true,
-    default = true,
   }
   if not title_hl.bg then
     title_hl.reverse = true
@@ -25,7 +24,6 @@ function M.define_highlights()
     match_hl = vim.api.nvim_get_hl(0, { name = "Search", link = false })
   end
   match_hl.bold = true
-  match_hl.default = true
   vim.api.nvim_set_hl(0, "NativePickerMatch", match_hl)
 end
 
