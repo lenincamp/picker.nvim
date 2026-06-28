@@ -99,7 +99,7 @@ function M.grep_picker(opts)
     input_mode = true,
     input_only = true,
     auto_select_single = false,
-    debounce_ms = opts.debounce_ms or 140,
+    debounce_ms = opts.debounce_ms or 150,
     layout = opts.layout or "intellij_grep",
     preview_open = opts.preview_open == true,
     dynamic_items = grep_core.dynamic_items(source_opts),

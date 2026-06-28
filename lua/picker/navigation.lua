@@ -10,15 +10,35 @@ function M.scroll_preview(preview_win, delta)
   end
 end
 
-function M.move_cursor(win, candidates, page_start, height, delta, first_line)
+--- Move the selection by `delta` across the full candidate list, scrolling the
+--- page when the selection passes a visible edge and wrapping around at the ends
+--- (last -> first, first -> last).
+--- @return number next_page_start
+--- @return number next_cursor_row
+--- @return boolean needs_render  -- true when page_start changed (caller must re-render)
+function M.advance_selection(total, page_start, cursor_row, height, delta, first_line)
   first_line = first_line or 3
-  if #candidates == 0 then
-    return false
+  if total <= 0 then
+    return page_start, cursor_row, false
   end
-  local cursor = vim.api.nvim_win_get_cursor(win)
-  local last = math.min(#candidates - page_start + first_line, math.max(first_line, height - 1))
-  vim.api.nvim_win_set_cursor(win, { math.max(first_line, math.min(cursor[1] + delta, last)), 0 })
-  return true
+  local visible_limit = math.max(1, height - first_line)
+  local index = page_start + (cursor_row - first_line) + delta
+  if index < 1 then
+    index = total
+  elseif index > total then
+    index = 1
+  end
+
+  local next_start = page_start
+  if index < page_start then
+    next_start = index
+  elseif index > page_start + visible_limit - 1 then
+    next_start = index - visible_limit + 1
+  end
+  next_start = math.max(1, next_start)
+
+  local next_cursor = index - next_start + first_line
+  return next_start, next_cursor, next_start ~= page_start
 end
 
 function M.page(candidates, page_start, height, delta, first_line)

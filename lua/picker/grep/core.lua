@@ -110,8 +110,13 @@ end
 
 function M.make_item(dir, file, lnum, col, text, query)
   local filename = vim.fs.normalize(dir .. "/" .. file)
+  -- `file` is already relative to the search dir (rg runs with cwd=dir), so use
+  -- it directly for the label instead of a per-item vim.fn.fnamemodify, which
+  -- was the main cost when building thousands of results. The grep picker still
+  -- overrides display via format_item; this label serves generic `sources.grep`
+  -- consumers that have no format_item.
   return {
-    label = string.format("%s:%d:%d  %s", vim.fn.fnamemodify(filename, ":~:."), lnum, col, text or ""),
+    label = string.format("%s:%d:%d  %s", file, lnum, col, text or ""),
     path = filename,
     filename = filename,
     lnum = lnum,
@@ -347,6 +352,9 @@ function M.dynamic_items(source_opts)
       return nil
     end
 
+    -- Keep the full result set (picker.proc caps at 5000 as a safety net) so
+    -- cursor navigation flows over everything. Items are cheap now (no eager
+    -- label), so building them no longer janks the main thread.
     local opts = vim.tbl_extend("force", source_opts, {
       all_files = state.all_files == true,
       cwd = source_opts.cwd or util.root(),

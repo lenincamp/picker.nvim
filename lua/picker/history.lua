@@ -151,6 +151,8 @@ end
 
 function History:back(entry)
   if self:at_tip() then
+    -- Snapshot the live query (even empty) so forward can return to it.
+    self.store.tip_entry = normalize_entry(entry)
     self:stage(entry)
   end
   if self.store.cursor <= 1 then
@@ -165,6 +167,9 @@ function History:forward()
     return nil
   end
   self.store.cursor = self.store.cursor + 1
+  if self.store.cursor == self.store.idx then
+    return self.store.tip_entry or self.store.entries[self.store.cursor]
+  end
   return self.store.entries[self.store.cursor]
 end
 

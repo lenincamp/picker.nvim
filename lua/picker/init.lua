@@ -310,11 +310,21 @@ function M.select_items(items, opts, on_choice)
     end
 
     local function move_cursor(delta)
-      if picker_navigation.move_cursor(candidates_win, current_candidates, page_start, height, delta, item_row) then
-        cursor_row = vim.api.nvim_win_get_cursor(candidates_win)[1]
+      if #current_candidates == 0 then return end
+      local next_start, next_cursor, needs_render =
+        picker_navigation.advance_selection(#current_candidates, page_start, cursor_row, height, delta, item_row)
+      if needs_render then
+        page_start = next_start
+        cursor_row = next_cursor
+        render()
+      else
+        cursor_row = next_cursor
+        if candidates_win and vim.api.nvim_win_is_valid(candidates_win) then
+          vim.api.nvim_win_set_cursor(candidates_win, { cursor_row, 0 })
+        end
         highlight_cursor_line()
-        update_preview()
       end
+      update_preview()
     end
 
     apply_filter_state = function(empty_message)
@@ -693,7 +703,7 @@ function M.select_items(items, opts, on_choice)
       cursor_row = item_row
       filter_generation = filter_generation + 1
       local generation = filter_generation
-      local ms = type(opts.dynamic_items) == "function" and math.max(tonumber(opts.debounce_ms) or 200, 50) or math.max(tonumber(opts.debounce_ms) or 25, 5)
+      local ms = type(opts.dynamic_items) == "function" and math.max(tonumber(opts.debounce_ms) or 150, 50) or math.max(tonumber(opts.debounce_ms) or 12, 0)
 
       local function refresh()
         debounce_timer:stop()
@@ -833,7 +843,7 @@ function M.select_items(items, opts, on_choice)
         width = layout.width,
         zindex = picker_layout_mod.INPUT_ZINDEX,
         initial = current_query,
-        debounce_ms = tonumber(opts.input_debounce_ms) or 35,
+        debounce_ms = tonumber(opts.input_debounce_ms) or 0,
         on_change = function(text)
           update_inline_query(text)
         end,

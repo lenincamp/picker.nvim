@@ -47,4 +47,12 @@ end
 assert_true(has_lua_glob, "rg_args includes glob")
 print("rg_args: ok")
 
+local item = grep_core.make_item("/tmp/proj", "src/a.lua", 12, 3, "local x = 1", "x")
+assert_eq(item.filename, "/tmp/proj/src/a.lua", "make_item filename")
+assert_eq(item.lnum, 12, "make_item lnum")
+assert_eq(item.col, 3, "make_item col")
+assert_eq(item.text, "local x = 1", "make_item text")
+assert_eq(item.label, "src/a.lua:12:3  local x = 1", "make_item cheap label uses relative file")
+print("make_item label: ok")
+
 print("grep/core: ok")

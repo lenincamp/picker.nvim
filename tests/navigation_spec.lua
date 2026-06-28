@@ -28,38 +28,41 @@ local _, all_changed = navigation.page({ 1, 2, 3 }, 1, 20, 1)
 assert_true(not all_changed, "page no-op when all fit")
 print("page all fit: ok")
 
--- Test: move_cursor creates buffer and window for testing
-local buf = vim.api.nvim_create_buf(false, true)
-vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "title", "status", "item1", "item2", "item3" })
-local win = vim.api.nvim_open_win(buf, true, {
-  relative = "editor",
-  row = 1,
-  col = 1,
-  width = 40,
-  height = 5,
-  style = "minimal",
-})
-vim.api.nvim_win_set_cursor(win, { 3, 0 })
+-- Test: advance_selection within the visible page (no re-render)
+-- height=5, first_line=3 => visible_limit=2; total=5
+local a_start, a_cursor, a_render = navigation.advance_selection(5, 1, 3, 5, 1, 3)
+assert_eq(a_start, 1, "advance within page keeps page_start")
+assert_eq(a_cursor, 4, "advance within page moves cursor down")
+assert_true(not a_render, "advance within page needs no render")
+print("advance within page: ok")
 
-local moved = navigation.move_cursor(win, { "a", "b", "c" }, 1, 5, 1)
-assert_true(moved, "move_cursor returns true")
-local cursor = vim.api.nvim_win_get_cursor(win)
-assert_eq(cursor[1], 4, "move_cursor moved down")
-print("move_cursor: ok")
+-- Test: advance_selection scrolls when passing the bottom edge
+local s_start, s_cursor, s_render = navigation.advance_selection(5, 1, 4, 5, 1, 3)
+assert_eq(s_start, 2, "advance past edge scrolls page_start")
+assert_eq(s_cursor, 4, "advance past edge keeps cursor at bottom")
+assert_true(s_render, "advance past edge needs render")
+print("advance scroll: ok")
 
--- Test: move_cursor clamp
-navigation.move_cursor(win, { "a", "b", "c" }, 1, 5, 10)
-local clamped = vim.api.nvim_win_get_cursor(win)
-assert_true(clamped[1] <= 5, "move_cursor clamped to max")
-print("move_cursor clamp: ok")
+-- Test: advance_selection wraps last -> first
+local wl_start, wl_cursor, wl_render = navigation.advance_selection(5, 4, 4, 5, 1, 3)
+assert_eq(wl_start, 1, "wrap last->first resets page_start")
+assert_eq(wl_cursor, 3, "wrap last->first puts cursor on first row")
+assert_true(wl_render, "wrap last->first needs render")
+print("advance wrap last->first: ok")
 
--- Test: move_cursor empty candidates
-local empty_moved = navigation.move_cursor(win, {}, 1, 5, 1)
-assert_true(not empty_moved, "move_cursor empty returns false")
-print("move_cursor empty: ok")
+-- Test: advance_selection wraps first -> last
+local wf_start, wf_cursor, wf_render = navigation.advance_selection(5, 1, 3, 5, -1, 3)
+assert_eq(wf_start, 4, "wrap first->last shows last page")
+assert_eq(wf_cursor, 4, "wrap first->last puts cursor on last item")
+assert_true(wf_render, "wrap first->last needs render")
+print("advance wrap first->last: ok")
 
-vim.api.nvim_win_close(win, true)
-vim.api.nvim_buf_delete(buf, { force = true })
+-- Test: advance_selection empty list is a no-op
+local e_start, e_cursor, e_render = navigation.advance_selection(0, 1, 3, 5, 1, 3)
+assert_eq(e_start, 1, "advance empty keeps page_start")
+assert_eq(e_cursor, 3, "advance empty keeps cursor")
+assert_true(not e_render, "advance empty needs no render")
+print("advance empty: ok")
 
 -- Test: scroll_preview
 -- Just ensure it doesn't error with invalid window
