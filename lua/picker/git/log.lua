@@ -3,8 +3,10 @@ local util = require("picker.util")
 
 local M = {}
 
+-- preview.nvim is optional: git log degrades to plain diff buffers without it.
 local function preview()
-  return require("preview")
+  local ok, p = pcall(require, "preview")
+  return ok and p or nil
 end
 
 function M.parse_commit_line(line)
@@ -84,8 +86,9 @@ function M.show_commit(root, hash, path, render_width)
     text = true,
     stdin = table.concat(lines, "\n") .. "\n",
   }):wait()
-  if delta and delta.code == 0 and delta.stdout and delta.stdout ~= "" then
-    local rendered, highlights = preview().ansi_to_lines(delta.stdout)
+  local p = preview()
+  if p and delta and delta.code == 0 and delta.stdout and delta.stdout ~= "" then
+    local rendered, highlights = p.ansi_to_lines(delta.stdout)
     return rendered, highlights, nil
   end
 
@@ -128,7 +131,12 @@ function M.select_commits(opts)
       return
     end
     local lines, highlights, syntax = M.show_commit(root, item.hash, opts.path, math.max(80, vim.o.columns))
-    preview().open_output_buffer({
+    local p = preview()
+    if not p then
+      util.notify("preview.nvim required to show commit diff", vim.log.levels.WARN)
+      return
+    end
+    p.open_output_buffer({
       name = "picker://git-show/" .. item.hash .. (opts.path and (":" .. opts.path) or ""),
       lines = lines,
       highlights = highlights,

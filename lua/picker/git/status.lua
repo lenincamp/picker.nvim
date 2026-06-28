@@ -128,12 +128,24 @@ function M.git_line_history(line1, line2)
     return
   end
 
-  require("preview").open_output_buffer({
-    name = "picker://git-line-history/" .. spec,
-    lines = lines,
-    height = 20,
-    syntax = "diff",
-  })
+  local ok, preview = pcall(require, "preview")
+  if ok then
+    preview.open_output_buffer({
+      name = "picker://git-line-history/" .. spec,
+      lines = lines,
+      height = 20,
+      syntax = "diff",
+    })
+    return
+  end
+
+  vim.cmd("botright 20new")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].filetype = "diff"
+  vim.bo[buf].modifiable = false
 end
 
 function M.setup_commands()
