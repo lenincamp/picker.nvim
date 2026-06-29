@@ -88,7 +88,6 @@ function M.git_status_grep(text)
     prompt = "Git status grep: " .. text,
     scope = "project",
     search_threshold = 0,
-    preview_open = true,
     preview = function(item)
       return item.filename or item.path
     end,

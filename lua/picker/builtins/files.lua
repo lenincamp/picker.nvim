@@ -76,7 +76,6 @@ function M.find_files(opts)
         query = query,
         input_mode = true,
         preview = true,
-        preview_open = true,
         auto_select_single = false,
         layout = "intellij_grep",
       })

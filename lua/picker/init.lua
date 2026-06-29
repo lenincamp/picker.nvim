@@ -82,7 +82,11 @@ function M.select_items(items, opts, on_choice)
     local item_row = opts.input_mode and 2 or 3
     local cursor_row = item_row -- tracks selected row in candidates (1-indexed buffer line)
     local has_preview = type(opts.preview) == "function" or type(opts.preview_lines) == "function"
-    local preview_enabled = has_preview and opts.preview_open == true
+    local want_preview = opts.preview_open
+    if want_preview == nil then
+      want_preview = config.current.preview_open
+    end
+    local preview_enabled = has_preview and want_preview == true
     local preview_maximized = false
     local show_descriptions = false
     local picker_layout = opts.layout or (intellij_grep and "intellij_grep" or "default")

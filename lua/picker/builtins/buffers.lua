@@ -51,7 +51,6 @@ function M.buffers(opts)
   opts = vim.tbl_extend("force", {
     prompt = "Buffers",
     scope = "session",
-    preview_open = true,
     multi_select = true,
   }, opts or {})
 

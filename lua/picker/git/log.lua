@@ -114,7 +114,6 @@ function M.select_commits(opts)
     prompt = opts.title or "Git log",
     scope = "project",
     search_threshold = 0,
-    preview_open = true,
     auto_select_single = false,
     preview_lines = function(item, render_width)
       local lines, highlights, syntax = M.show_commit(root, item.hash, opts.path, render_width)

@@ -77,7 +77,7 @@ function M.grep(opts)
     input_mode = true,
     layout = opts.layout,
     auto_select_single = false,
-    preview_open = opts.preview_open == true,
+    preview_open = opts.preview_open,
   })
 
   picker.select_items(items, picker.with_layout(picker_opts), open_item)
@@ -101,7 +101,7 @@ function M.grep_picker(opts)
     auto_select_single = false,
     debounce_ms = opts.debounce_ms or 150,
     layout = opts.layout or "intellij_grep",
-    preview_open = opts.preview_open == true,
+    preview_open = opts.preview_open,
     dynamic_items = grep_core.dynamic_items(source_opts),
     submit_query = function(query, state)
       local next_opts = vim.tbl_extend("force", opts, {
@@ -111,7 +111,6 @@ function M.grep_picker(opts)
         query = query,
         regex = opts.regex == true,
         preview = true,
-        preview_open = true,
         layout = "intellij_grep",
       })
       if state and state.quick_filter and state.quick_filter.glob then
@@ -161,7 +160,7 @@ function M.grep_buffer(opts)
     local picker_opts = vim.tbl_extend("force", base_picker_opts(vim.tbl_extend("force", opts, { query = query })), {
       prompt = title,
       scope = "buffer",
-      preview_open = opts.preview_open ~= false,
+      preview_open = opts.preview_open,
     })
     picker.select_items(items, picker.with_layout(picker_opts), open_item)
   end

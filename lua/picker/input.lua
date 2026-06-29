@@ -47,6 +47,10 @@ function M.open(opts)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
+  -- Disable completion engines (blink.cmp/nvim-cmp) in the filter prompt so they
+  -- don't claim insert-mode keys like <C-k>/<C-j> that the picker maps for history.
+  vim.b[buf].completion = false
+  vim.b[buf].cmp_enabled = false
 
   local title = " " .. (opts.prompt or "Search") .. " "
   local win = vim.api.nvim_open_win(buf, true, {
@@ -152,7 +156,7 @@ function M.open(opts)
   -- Only keep i/a/I/A for re-entering insert (native behavior)
   local normal_passthrough = {
     "<CR>", "<Esc>", "q", "j", "k", "J", "K",
-    "<C-n>", "<C-p>", "<C-u>", "<C-d>", "<C-q>", "<C-r>", "<C-f>", "<C-b>",
+    "<C-n>", "<C-p>", "<C-j>", "<C-k>", "<C-u>", "<C-d>", "<C-q>", "<C-r>", "<C-f>", "<C-b>",
     "<Tab>", "<C-o>", "<C-v>", "<C-x>", "<A-l>",
     "z", "F", "C", "R", "I", "/", "?",
     "]g", "[g",

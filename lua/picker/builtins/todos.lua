@@ -47,7 +47,6 @@ function M.todos(opts)
     prompt = title,
     scope = "project",
     search_threshold = 0,
-    preview_open = true,
     preview = function(item)
       return item.filename or item.path
     end,
