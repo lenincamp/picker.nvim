@@ -8,17 +8,29 @@ function M.define_highlights()
   if not accent.fg then
     accent = vim.api.nvim_get_hl(0, { name = "Directory", link = false })
   end
+  local picker_bg = float.bg or menu.bg or status.bg
+  local picker_fg = float.fg or menu.fg or status.fg
   local title_hl = {
-    fg = accent.fg or status.fg,
-    bg = status.bg or float.bg or menu.bg,
+    fg = accent.fg or picker_fg,
+    bg = picker_bg,
     bold = true,
   }
   if not title_hl.bg then
     title_hl.reverse = true
   end
   vim.api.nvim_set_hl(0, "NativePickerTitle", title_hl)
-  vim.api.nvim_set_hl(0, "NativePickerStatus", { link = "StatusLineNC", default = true })
-  vim.api.nvim_set_hl(0, "NativePickerKey", { link = "Special", default = true })
+  vim.api.nvim_set_hl(0, "NativePickerStatus", {
+    fg = picker_fg,
+    bg = picker_bg,
+  })
+  vim.api.nvim_set_hl(0, "NativePickerKey", {
+    fg = picker_fg,
+    bg = picker_bg,
+  })
+  vim.api.nvim_set_hl(0, "NativePickerItem", {
+    fg = picker_fg,
+    bg = "NONE",
+  })
   local selection = vim.api.nvim_get_hl(0, { name = "PmenuSel", link = false })
   if selection.fg or selection.bg then
     vim.api.nvim_set_hl(0, "NativePickerSelection", { link = "PmenuSel" })

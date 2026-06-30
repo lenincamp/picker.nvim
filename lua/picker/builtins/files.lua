@@ -4,8 +4,8 @@ local util = require("picker.util")
 local M = {}
 
 local function open_item(item)
-  if item and item.path then
-    vim.cmd("edit " .. vim.fn.fnameescape(item.path))
+  if item then
+    util.open_file(item.path)
   end
 end
 

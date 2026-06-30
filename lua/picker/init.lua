@@ -989,7 +989,7 @@ local recent = require("picker.builtins.recent")
 local grep = require("picker.builtins.grep")
 local files = require("picker.builtins.files")
 local git = require("picker.builtins.git")
-local todos = require("picker.builtins.todos")
+
 
 M.root = util.root
 M.filters = util.filters
@@ -1022,10 +1022,7 @@ M.git_browse = git.git_browse
 M.lazygit = git.lazygit
 M.git_status_grep = git.git_status_grep
 M.git_line_history = git.git_line_history
-M.todos = todos.todos
-M.todos_urgent = todos.todos_urgent
 
 M.dashboard = require("picker.dashboard")
-M.gutter = require("picker.gutter")
 
 return M

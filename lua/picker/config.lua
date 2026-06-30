@@ -37,10 +37,6 @@ M.defaults = {
     commands = false,
     browse_url = nil,
   },
-  todos = {
-    keywords = { "TODO", "FIX", "FIXME", "HACK", "WARN", "PERF", "NOTE", "TEST" },
-    urgent_keywords = { "TODO", "FIX", "FIXME" },
-  },
 }
 
 M.current = vim.deepcopy(M.defaults)

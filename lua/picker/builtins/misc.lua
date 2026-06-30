@@ -133,8 +133,7 @@ function M.marks()
     end,
   }, function(mark)
     if mark then
-      vim.cmd("edit " .. vim.fn.fnameescape(mark.file))
-      vim.api.nvim_win_set_cursor(0, { mark.pos[2], math.max(mark.pos[3] - 1, 0) })
+      util.open_file(mark.file, mark.pos[2], mark.pos[3])
     end
   end)
 end

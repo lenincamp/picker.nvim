@@ -8,14 +8,7 @@ local M = {}
 local commands_ready = false
 
 local function open_grep_item(item)
-  local path = item.filename or item.path
-  if not path then
-    return
-  end
-  vim.cmd("edit " .. vim.fn.fnameescape(path))
-  if item.lnum then
-    vim.api.nvim_win_set_cursor(0, { item.lnum, math.max((item.col or 1) - 1, 0) })
-  end
+  util.open_file(item.filename or item.path, item.lnum, item.col)
 end
 
 local function format_grep_item(item)

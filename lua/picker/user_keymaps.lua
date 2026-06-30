@@ -124,8 +124,6 @@ local specs = {
   { mode = "n", lhs = "<leader>sn", desc = "Notifications",         action = function() picker().notifications() end },
   { mode = "n", lhs = "<leader>sq", desc = "Quickfix List",         action = function() picker().qflist() end },
   { mode = "n", lhs = "<leader>sr", desc = "Resume Last Search",    action = function() picker().resume() end },
-  { mode = "n", lhs = "<leader>st", desc = "Search TODO",           action = function() picker().todos() end },
-  { mode = "n", lhs = "<leader>sT", desc = "Search TODO/FIX/FIXME", action = function() picker().todos_urgent() end },
   { mode = "n", lhs = "<leader>su", desc = "Undo History",          action = function() picker().undo_history() end },
   {
     mode = { "n", "x" },

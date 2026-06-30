@@ -49,7 +49,7 @@ function M.recent_files(opts)
     end,
   }, function(item)
     if item then
-      vim.cmd("edit " .. vim.fn.fnameescape(item.path))
+      util.open_file(item.path)
     end
   end)
 end

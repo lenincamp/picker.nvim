@@ -13,6 +13,20 @@ function M.item_path(item)
   return type(item) == "table" and (item.path or item.filename or item.label or "") or tostring(item or "")
 end
 
+function M.open_file(path, lnum, col)
+  if not path or path == "" then
+    return
+  end
+  local target = vim.fn.fnamemodify(path, ":p")
+  local current = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  if target ~= current then
+    vim.cmd("edit " .. vim.fn.fnameescape(path))
+  end
+  if lnum then
+    vim.api.nvim_win_set_cursor(0, { lnum, math.max((col or 1) - 1, 0) })
+  end
+end
+
 function M.path_has_extension(path, extensions)
   path = path:lower()
   for _, extension in ipairs(extensions) do

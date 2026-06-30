@@ -76,17 +76,6 @@ function M.highlight(bufnr, namespace, line, opts)
   else
     vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerTitle", status_row, 0, -1)
   end
-  for key in line:gmatch("[%w%-%[%]/?<:]+") do
-    local start = 1
-    while true do
-      local from, to = line:find(vim.pesc(key), start)
-      if not from then
-        break
-      end
-      vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerKey", status_row, from - 1, to)
-      start = to + 1
-    end
-  end
 end
 
 return M

@@ -45,6 +45,7 @@ function M.lines(opts, state)
   local visible_limit = math.max(1, state.height - header_lines - 1)
   local page_end = math.min(total, page_start + visible_limit - 1)
   local lines = {}
+  local item_line_highlights = {}
   if not opts.input_mode then
     local title = single_line(state.prompt)
       .. (state.current_query ~= "" and (" /" .. single_line(state.current_query)) or "")
@@ -68,6 +69,7 @@ function M.lines(opts, state)
     local prefix = string.format("%4d %s %s ", index, shortcut, marker)
     local line = prefix .. label
     lines[#lines + 1] = line
+    item_line_highlights[#item_line_highlights + 1] = #lines
     if state.current_query ~= "" then
       for _, range in ipairs(picker_filter.match_ranges(label, state.current_query)) do
         item_highlights[#item_highlights + 1] = {
@@ -86,6 +88,7 @@ function M.lines(opts, state)
   return {
     lines = lines,
     item_highlights = item_highlights,
+    item_line_highlights = item_line_highlights,
     status_line = status_line,
     page_start = page_start,
   }
@@ -93,6 +96,9 @@ end
 
 function M.highlight(bufnr, namespace, rendered, opts)
   picker_status.highlight(bufnr, namespace, rendered.status_line, opts)
+  for _, line_num in ipairs(rendered.item_line_highlights or {}) do
+    vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerItem", line_num - 1, 0, -1)
+  end
   for _, range in ipairs(rendered.item_highlights or {}) do
     vim.api.nvim_buf_add_highlight(bufnr, namespace, "NativePickerMatch", range.line - 1, range.from, range.to)
   end
